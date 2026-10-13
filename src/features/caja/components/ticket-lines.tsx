@@ -1,0 +1,63 @@
+import { formatCents } from '@/lib/format'
+import type { CatalogItem } from '../data/products.mock'
+import { MADE_TO_ORDER_STOCK } from '../data/products.mock'
+import { lineTotalCents } from '../lib/totals'
+
+export type CartLineView = {
+  item: CatalogItem
+  qty: number
+}
+
+type Props = {
+  lines: CartLineView[]
+  onChangeQty: (key: string, delta: 1 | -1) => void
+  /** Botones de cantidad más grandes (hoja móvil). */
+  large?: boolean
+}
+
+export function TicketLines({ lines, onChangeQty, large = false }: Props) {
+  const btn = `${large ? 'size-8.5' : 'size-7.5'} cursor-pointer rounded-full text-base hover:bg-line disabled:cursor-not-allowed disabled:opacity-40`
+
+  return (
+    <ul>
+      {lines.map(({ item, qty }) => {
+        const atMax = item.stock < MADE_TO_ORDER_STOCK && qty >= item.stock
+        return (
+          <li key={item.key} className="flex items-center gap-2.5 border-line border-b py-3">
+            <div className="min-w-0 flex-1">
+              <div className="truncate font-medium text-sm">{item.productName}</div>
+              <div className="text-muted text-xs">
+                {item.variantName} · {formatCents(item.priceCents)}
+              </div>
+            </div>
+            <div className="flex items-center gap-0.5 rounded-full bg-surface-2">
+              <button
+                type="button"
+                className={btn}
+                aria-label={`Quitar una unidad de ${item.label}`}
+                onClick={() => onChangeQty(item.key, -1)}
+              >
+                −
+              </button>
+              <span className="min-w-4.5 text-center font-mono text-[13px]" aria-live="polite">
+                {qty}
+              </span>
+              <button
+                type="button"
+                className={btn}
+                disabled={atMax}
+                aria-label={`Agregar una unidad de ${item.label}`}
+                onClick={() => onChangeQty(item.key, 1)}
+              >
+                +
+              </button>
+            </div>
+            <span className="min-w-16 text-right font-mono text-sm">
+              {formatCents(lineTotalCents({ unitPriceCents: item.priceCents, qty }))}
+            </span>
+          </li>
+        )
+      })}
+    </ul>
+  )
+}
