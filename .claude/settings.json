@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Read",
+      "Edit",
+      "Glob",
+      "Grep",
+      "Bash(bun install)",
+      "Bash(bun add:*)",
+      "Bash(bun dev)",
+      "Bash(bun run lint:*)",
+      "Bash(bun run typecheck)",
+      "Bash(bun run test:*)",
+      "Bash(bunx vitest:*)",
+      "Bash(bunx tsc --noEmit:*)",
+      "Bash(bunx biome check:*)",
+      "Bash(bunx biome format:*)",
+      "Bash(bunx playwright test:*)",
+      "Bash(bunx drizzle-kit generate:*)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git branch:*)",
+      "Bash(git checkout -b:*)",
+      "Bash(git switch:*)",
+      "Bash(git add:*)",
+      "Bash(git fetch:*)",
+      "Bash(gh pr view:*)",
+      "Bash(gh pr list:*)",
+      "Bash(gh pr checks:*)",
+      "Bash(gh issue view:*)",
+      "Bash(gh issue list:*)"
+    ],
+    "deny": [
+      "Read(./.env)",
+      "Read(./.env.local)",
+      "Read(./.env.*.local)",
+      "Bash(npm:*)",
+      "Bash(yarn:*)",
+      "Bash(pnpm:*)",
+      "Bash(git push --force:*)",
+      "Bash(bunx drizzle-kit push:*)"
+    ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [{ "type": "command", "command": "bash .claude/hooks/biome-format.sh" }]
+      }
+    ]
+  }
+}
