@@ -9,5 +9,6 @@ export default defineConfig({
   out: './drizzle',
   dialect: 'postgresql',
   casing: 'snake_case',
-  dbCredentials: { url: process.env.DATABASE_URL ?? '' },
+  // Migraciones por el session pooler (5432): el transaction pooler (6543) no mantiene la sesión
+  dbCredentials: { url: process.env.DIRECT_URL ?? process.env.DATABASE_URL ?? '' },
 })
