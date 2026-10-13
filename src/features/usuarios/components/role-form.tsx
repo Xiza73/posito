@@ -16,7 +16,7 @@ export function RoleForm({ memberId, role }: { memberId: string; role: string })
         name="role"
         defaultValue={role}
         aria-label="Rol"
-        className="h-9 rounded-ctl border border-line bg-page px-2 text-sm"
+        className="h-9 rounded-ctl border border-line bg-page pl-3 text-sm"
       >
         {ASSIGNABLE_ROLES.map((r) => (
           <option key={r} value={r}>

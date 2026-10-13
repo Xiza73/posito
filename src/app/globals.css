@@ -100,3 +100,19 @@ input::placeholder {
     animation: none !important;
   }
 }
+
+/* Select estándar: flecha propia con tokens (se adapta a Cielo/Café) y espacio fijo a la derecha.
+   Sin @layer a propósito: gana a las utilidades de Tailwind, ningún componente lo rompe. */
+select {
+  appearance: none;
+  padding-right: 2.5rem;
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--muted) 50%),
+    linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+  background-position:
+    calc(100% - 1.15rem) 50%,
+    calc(100% - 0.8rem) 50%;
+  background-size: 0.35rem 0.35rem;
+  background-repeat: no-repeat;
+  cursor: pointer;
+}
