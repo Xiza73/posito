@@ -41,7 +41,8 @@ Ventalia es un **punto de venta (POS) web para bodegas y minimarkets en Perú**.
 | Unit/componentes | Vitest + React Testing Library + jest-dom |
 | E2E | Playwright (proyectos: escritorio, tablet, movil) |
 | Base de datos | Supabase **solo como Postgres** + Drizzle ORM |
-| Auth | Better Auth (plugins `admin` y `organization` para roles y sucursales) |
+| Auth | Better Auth (plugin `organization`: una organization = una bodega; roles en `member.role`) |
+| DB en tests | PGlite (Postgres en WASM, en memoria): migraciones reales sin Docker |
 
 ## 4. Comandos clave
 
@@ -54,6 +55,9 @@ bun run lint:fix       # biome check --write
 bun run typecheck      # tsc --noEmit
 bun run test           # vitest (unit + componentes)
 bun run test:e2e       # playwright
+bun run db:generate    # genera migración SQL desde src/db/schema.ts
+bun run db:migrate     # aplica migraciones contra DATABASE_URL
+bun run db:studio      # explorador de la DB
 ```
 
 Puerta antes de commit: `bun run lint && bun run typecheck && bun run test`.
@@ -86,7 +90,8 @@ src/
 │   └── data/               # Queries Drizzle / mocks
 ├── components/             # UI compartida (shell, botones, inputs)
 ├── lib/                    # Utilidades transversales (format, db, auth)
-└── db/                     # Esquema Drizzle y migraciones
+└── db/                     # schema.ts (dominio) + auth-schema.ts (generado por Better Auth)
+drizzle/                    # Migraciones SQL generadas (no editar a mano)
 e2e/                        # Specs de Playwright
 ```
 
@@ -95,8 +100,11 @@ Regla: una feature **no importa** de otra feature; lo compartido sube a `compone
 ## 7. Integraciones externas
 
 - **Supabase (Postgres)**: conexión vía `DATABASE_URL` (pooler, transaction mode). No se usa el cliente `@supabase/supabase-js` ni Supabase Auth.
-- **Drizzle ORM**: esquema en `src/db/schema.ts`, migraciones con `bunx drizzle-kit generate` / `migrate`.
-- **Better Auth**: tablas en nuestro propio esquema Drizzle. Roles: `admin`, `cajero`. Sucursal = `organization`.
+- **Drizzle ORM**: esquema en `src/db/schema.ts`, `casing: 'snake_case'`. Todo cambio de esquema → `bun run db:generate` + test en `src/db/schema.test.ts`. **Nunca** `drizzle-kit push` contra la nube.
+  - Toda tabla de negocio lleva `organizationId`; **toda query filtra por la organization de la sesión**.
+  - Stock: `stock_movement` es la fuente de verdad (append-only); `product.stock` es caché que se actualiza en la **misma transacción**.
+  - Integridad en la DB con `CHECK` (stock ≥ 0, subtotal + igv = total, línea = precio × cantidad).
+- **Better Auth**: tablas generadas en `src/db/auth-schema.ts` con `bunx auth@latest generate --config src/lib/auth.ts --output src/db/auth-schema.ts --adapter drizzle --dialect pg --yes` (no editar a mano). Roles: `owner`/`admin`/`cajero` vía plugin `organization`.
 - Variables en `.env.local` (plantilla en `.env.example`). **Nunca** commitear secretos.
 
 ## 8. Reglas de trabajo con Claude
