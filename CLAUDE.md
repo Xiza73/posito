@@ -58,6 +58,7 @@ bun run test:e2e       # playwright
 bun run db:generate    # genera migración SQL desde src/db/schema.ts
 bun run db:migrate     # aplica migraciones contra DATABASE_URL
 bun run db:studio      # explorador de la DB
+bun run bodega:create -- --nombre "Bodega X" --propietario "Ana Rojas" --email ana@x.pe   # alta de bodega (pide la contraseña por prompt)
 ```
 
 Puerta antes de commit: `bun run lint && bun run typecheck && bun run test`.
@@ -102,9 +103,13 @@ Regla: una feature **no importa** de otra feature; lo compartido sube a `compone
 - **Supabase (Postgres)**: conexión vía `DATABASE_URL` (pooler, transaction mode). No se usa el cliente `@supabase/supabase-js` ni Supabase Auth.
 - **Drizzle ORM**: esquema en `src/db/schema.ts`, `casing: 'snake_case'`. Todo cambio de esquema → `bun run db:generate` + test en `src/db/schema.test.ts`. **Nunca** `drizzle-kit push` contra la nube.
   - Toda tabla de negocio lleva `organizationId`; **toda query filtra por la organization de la sesión**.
+  - Cada page, loader o Server Action que lea o escriba datos de la bodega llama a `getCurrentMember()` (y `requirePermission` si aplica). El layout y el middleware NO bastan: el layout no se re-ejecuta en navegación cliente y el middleware es solo optimista.
   - Stock: `stock_movement` es la fuente de verdad (append-only); `product.stock` es caché que se actualiza en la **misma transacción**.
   - Integridad en la DB con `CHECK` (stock ≥ 0, subtotal + igv = total, línea = precio × cantidad).
 - **Better Auth**: tablas generadas en `src/db/auth-schema.ts` con `bunx auth@latest generate --config src/lib/auth.ts --output src/db/auth-schema.ts --adapter drizzle --dialect pg --yes` (no editar a mano). Roles: `owner`/`admin`/`cajero` vía plugin `organization`.
+  - **Sin registro público** (`disableSignUp: true`): las bodegas se crean con `bun run bodega:create` (invitación manual) y el owner/admin crea cajeros en Usuarios. Como `signUpEmail` también queda bloqueado en servidor, los usuarios se crean con `createUserWithPassword` (`src/lib/users.ts`, primitivas internas de Better Auth).
+  - Permisos en `src/lib/permissions.ts` (`ac` + `roles`, compartido servidor/cliente). `owner` no es asignable desde la UI. Verificación real en servidor con `getCurrentMember()` / `requirePermission()` (`src/lib/session.ts`); el middleware solo hace un chequeo optimista de cookie.
+  - La sesión nace con `activeOrganizationId` = primera membresía del usuario (hook `databaseHooks.session.create.before`).
 - Variables en `.env.local` (plantilla en `.env.example`). **Nunca** commitear secretos.
 
 ## 8. Reglas de trabajo con Claude

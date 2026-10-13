@@ -3,14 +3,14 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { Icon } from '@/components/ui/icon'
-import { isActive, NAV_ITEMS } from './nav-items'
+import { isActive, NAV_ITEMS, visibleItems } from './nav-items'
 
-export function SidebarNav() {
+export function SidebarNav({ canManage }: { canManage: boolean }) {
   const pathname = usePathname()
 
   return (
     <ul className="flex flex-col gap-1">
-      {NAV_ITEMS.map((it) => {
+      {visibleItems(NAV_ITEMS, canManage).map((it) => {
         const active = isActive(pathname, it.href)
         return (
           <li key={it.href}>
