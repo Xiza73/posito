@@ -80,4 +80,30 @@ describe('esquema: restricciones de integridad', () => {
       ]),
     ).resolves.toBeDefined()
   })
+
+  it('acepta una serie de boleta válida', async () => {
+    await expect(
+      db.insert(schema.receiptSeries).values({ organizationId: ORG, series: 'B001' }),
+    ).resolves.toBeDefined()
+  })
+
+  it('receipt_series rechaza series que no son B + 3 dígitos', async () => {
+    for (const series of ['F001', 'B01', 'B0001', 'b001', 'B00A']) {
+      await expect(
+        db
+          .update(schema.receiptSeries)
+          .set({ series })
+          .where(eq(schema.receiptSeries.organizationId, ORG)),
+      ).rejects.toThrow()
+    }
+  })
+
+  it('receipt_series rechaza un último número negativo', async () => {
+    await expect(
+      db
+        .update(schema.receiptSeries)
+        .set({ lastNumber: -1 })
+        .where(eq(schema.receiptSeries.organizationId, ORG)),
+    ).rejects.toThrow()
+  })
 })

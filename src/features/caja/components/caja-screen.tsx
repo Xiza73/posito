@@ -1,14 +1,16 @@
 'use client'
 
-import { useState } from 'react'
-import { formatCents } from '@/lib/format'
+import { useRef, useState, useTransition } from 'react'
+import { checkoutAction } from '../actions'
 import { type CatalogProduct, canAddMore, matchesQuery } from '../lib/catalog'
+import type { PaymentMethod } from '../lib/payment'
+import type { SaleSummary } from '../lib/receipt'
 import { computeTotals, itemCount } from '../lib/totals'
 import { CategoryChips } from './category-chips'
 import { MobileCart } from './mobile-cart'
-import type { PaymentMethod } from './payment-methods'
 import { ProductCard } from './product-card'
 import { ProductSearch } from './product-search'
+import { ReceiptDialog } from './receipt-dialog'
 import type { CartLineView } from './ticket-lines'
 import { TicketPanel } from './ticket-panel'
 
@@ -19,15 +21,25 @@ type Props = {
   products: CatalogProduct[]
   /** Categorías con al menos un producto activo (los chips agregan "Todos"). */
   categories: string[]
+  /** Nombre de la bodega, para el encabezado de la boleta. */
+  businessName: string
 }
 
-export function CajaScreen({ products, categories }: Props) {
+export function CajaScreen({ products, categories, businessName }: Props) {
   const [query, setQuery] = useState('')
   const [category, setCategory] = useState<string | null>(null)
   const [cart, setCart] = useState<Cart>({})
-  const [pay, setPay] = useState<PaymentMethod>('Efectivo')
+  const [pay, setPay] = useState<PaymentMethod>('efectivo')
   const [sheetOpen, setSheetOpen] = useState(false)
-  const [notice, setNotice] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [receipt, setReceipt] = useState<SaleSummary | null>(null)
+  const [pending, startTransition] = useTransition()
+  // Idempotencia: el mismo id sobrevive a los reintentos hasta que la venta se cobra o se vacía el
+  // ticket; así un reintento tras un corte de red no duplica la venta ni el descuento de stock.
+  const saleIdRef = useRef<string | null>(null)
+  // Tras un corte de red no sabemos si la venta se guardó: el ticket se congela hasta reintentar
+  // (confirma sin duplicar) o vaciar. Editarlo devolvería la venta original con otro contenido.
+  const [unconfirmed, setUnconfirmed] = useState(false)
 
   const byId = new Map(products.map((p) => [p.id, p]))
   const visible = products.filter(
@@ -43,11 +55,13 @@ export function CajaScreen({ products, categories }: Props) {
   const count = itemCount(priced)
 
   function add(id: string) {
-    setNotice(null)
+    if (unconfirmed) return // conserva el aviso: el ticket sigue congelado
+    setError(null)
     changeQty(id, 1)
   }
 
   function changeQty(id: string, delta: 1 | -1) {
+    if (unconfirmed) return
     setCart((prev) => {
       const item = byId.get(id)
       if (!item) return prev
@@ -64,62 +78,92 @@ export function CajaScreen({ products, categories }: Props) {
   function clear() {
     setCart({})
     setSheetOpen(false)
+    setError(null)
+    setUnconfirmed(false)
+    saleIdRef.current = null
   }
 
   function charge() {
-    if (lines.length === 0) return
-    // ponytail: cobro simulado, sin escribir en la DB. La venta real (sale + stock_movement en
-    // una transacción) llega con el PR de cobro.
-    setNotice(`Venta cobrada: ${formatCents(totals.total)} (${pay})`)
-    clear()
+    if (lines.length === 0 || pending) return
+    saleIdRef.current ??= crypto.randomUUID()
+    const input = {
+      saleId: saleIdRef.current,
+      paymentMethod: pay,
+      items: lines.map((l) => ({ productId: l.item.id, quantity: l.qty })),
+    }
+    setError(null)
+    startTransition(async () => {
+      try {
+        const res = await checkoutAction(input)
+        setUnconfirmed(false) // hubo respuesta: el resultado ya se conoce
+        if (res.ok) {
+          clear()
+          setReceipt(res.sale)
+        } else {
+          setError(res.error)
+        }
+      } catch {
+        // Sin respuesta (red): el resultado es desconocido; se conserva el saleId para reintentar
+        setUnconfirmed(true)
+        setError(
+          'No se pudo confirmar el cobro. Revisa tu conexión y vuelve a cobrar: no se cobrará dos veces. El ticket no se puede modificar hasta confirmarlo.',
+        )
+      }
+    })
   }
 
   return (
-    <div className="flex min-h-0 flex-1 animate-fade-up">
-      <section
-        aria-label="Catálogo"
-        className={`flex min-w-0 flex-1 flex-col gap-4 overflow-auto p-4 md:px-7 md:py-6 ${
-          lines.length > 0 ? 'pb-24 md:pb-6' : ''
-        }`}
-      >
-        <ProductSearch value={query} onChange={setQuery} />
-        <CategoryChips categories={categories} value={category} onChange={setCategory} />
-        {visible.length === 0 ? (
-          <p className="py-10 text-center text-muted text-sm">
-            No hay productos que coincidan con tu búsqueda.
-          </p>
-        ) : (
-          <div className="grid grid-cols-[repeat(auto-fill,minmax(140px,1fr))] gap-3">
-            {visible.map((item) => (
-              <ProductCard key={item.id} item={item} onAdd={add} />
-            ))}
-          </div>
-        )}
-      </section>
+    <>
+      <div aria-busy={pending} inert={pending} className="flex min-h-0 flex-1 animate-fade-up">
+        <section
+          aria-label="Catálogo"
+          className={`flex min-w-0 flex-1 flex-col gap-4 overflow-auto p-4 md:px-7 md:py-6 ${
+            lines.length > 0 ? 'pb-24 md:pb-6' : ''
+          }`}
+        >
+          <ProductSearch value={query} onChange={setQuery} />
+          <CategoryChips categories={categories} value={category} onChange={setCategory} />
+          {visible.length === 0 ? (
+            <p className="py-10 text-center text-muted text-sm">
+              No hay productos que coincidan con tu búsqueda.
+            </p>
+          ) : (
+            <div className="grid grid-cols-[repeat(auto-fill,minmax(140px,1fr))] gap-3">
+              {visible.map((item) => (
+                <ProductCard key={item.id} item={item} onAdd={add} />
+              ))}
+            </div>
+          )}
+        </section>
 
-      <TicketPanel
-        lines={lines}
-        totals={totals}
-        pay={pay}
-        notice={notice}
-        onPay={setPay}
-        onChangeQty={changeQty}
-        onClear={clear}
-        onCharge={charge}
-      />
+        <TicketPanel
+          lines={lines}
+          totals={totals}
+          pay={pay}
+          error={error}
+          pending={pending}
+          onPay={setPay}
+          onChangeQty={changeQty}
+          onClear={clear}
+          onCharge={charge}
+        />
 
-      <MobileCart
-        lines={lines}
-        count={count}
-        totalCents={totals.total}
-        open={sheetOpen}
-        pay={pay}
-        onOpen={() => setSheetOpen(true)}
-        onClose={() => setSheetOpen(false)}
-        onPay={setPay}
-        onChangeQty={changeQty}
-        onCharge={charge}
-      />
-    </div>
+        <MobileCart
+          lines={lines}
+          count={count}
+          totalCents={totals.total}
+          open={sheetOpen}
+          pay={pay}
+          error={error}
+          pending={pending}
+          onOpen={() => setSheetOpen(true)}
+          onClose={() => setSheetOpen(false)}
+          onPay={setPay}
+          onChangeQty={changeQty}
+          onCharge={charge}
+        />
+      </div>
+      <ReceiptDialog sale={receipt} businessName={businessName} onClose={() => setReceipt(null)} />
+    </>
   )
 }

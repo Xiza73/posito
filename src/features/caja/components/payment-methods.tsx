@@ -1,5 +1,4 @@
-export const PAYMENT_METHODS = ['Efectivo', 'Yape / Plin', 'Tarjeta'] as const
-export type PaymentMethod = (typeof PAYMENT_METHODS)[number]
+import { PAYMENT_LABELS, PAYMENT_METHODS, type PaymentMethod } from '../lib/payment'
 
 type Props = {
   value: PaymentMethod
@@ -24,7 +23,7 @@ export function PaymentMethods({ value, onChange }: Props) {
               on ? 'bg-accent text-accent-ink' : 'text-ink'
             }`}
           >
-            {m}
+            {PAYMENT_LABELS[m]}
           </button>
         )
       })}

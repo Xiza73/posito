@@ -1,6 +1,7 @@
 'use client'
 
 import { useActionState, useRef, useState } from 'react'
+import { INPUT } from '@/components/ui/field'
 import { SubmitButton } from '@/components/ui/submit-button'
 import {
   createCategoryAction,
@@ -9,7 +10,6 @@ import {
   renameCategoryAction,
 } from '../actions'
 import type { CategoryRow } from '../data/products'
-import { INPUT } from './field'
 
 const INITIAL: FormState = { ok: false }
 const BTN =

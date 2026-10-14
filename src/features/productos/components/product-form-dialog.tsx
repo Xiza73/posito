@@ -1,11 +1,11 @@
 'use client'
 
 import { useActionState, useEffect, useRef, useState } from 'react'
+import { Field, INPUT } from '@/components/ui/field'
 import { SubmitButton } from '@/components/ui/submit-button'
 import { createProductAction, type FormState, updateProductAction } from '../actions'
 import type { ProductRow } from '../data/products'
 import { centsToPriceInput } from '../lib/schemas'
-import { Field, INPUT } from './field'
 
 const INITIAL: FormState = { ok: false }
 
