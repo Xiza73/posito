@@ -1,12 +1,12 @@
 'use client'
 
 import { useActionState, useRef } from 'react'
+import { SubmitButton } from '@/components/ui/submit-button'
 import { ASSIGNABLE_ROLES, ROLE_LABELS } from '@/lib/permissions'
 import { createCashier, type FormState } from '../actions'
 
 const INITIAL: FormState = { ok: false }
-const INPUT =
-  'h-11 rounded-ctl border border-line bg-page px-3 text-ink outline-none focus-visible:border-accent'
+const INPUT = 'h-11 rounded-ctl border border-line bg-page px-3 text-ink'
 
 export function NewUserDialog() {
   const dialogRef = useRef<HTMLDialogElement>(null)
@@ -17,7 +17,7 @@ export function NewUserDialog() {
     return result
   }
 
-  const [state, action, pending] = useActionState(submit, INITIAL)
+  const [state, action] = useActionState(submit, INITIAL)
   const fe = state.fieldErrors ?? {}
 
   return (
@@ -100,13 +100,12 @@ export function NewUserDialog() {
             >
               Cancelar
             </button>
-            <button
-              type="submit"
-              disabled={pending}
-              className="h-10 cursor-pointer rounded-ctl bg-accent px-4 font-semibold text-accent-ink text-sm disabled:cursor-wait disabled:opacity-60"
+            <SubmitButton
+              pendingLabel="Creando…"
+              className="h-10 rounded-ctl bg-accent px-4 font-semibold text-accent-ink text-sm"
             >
-              {pending ? 'Creando…' : 'Crear usuario'}
-            </button>
+              Crear usuario
+            </SubmitButton>
           </div>
         </form>
       </dialog>

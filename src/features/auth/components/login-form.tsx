@@ -4,8 +4,7 @@ import { useRouter } from 'next/navigation'
 import { type FormEvent, useState } from 'react'
 import { authClient } from '@/lib/auth-client'
 
-const INPUT =
-  'h-11.5 rounded-ctl border border-line bg-page px-3.5 text-ink outline-none focus-visible:border-accent'
+const INPUT = 'h-11.5 rounded-ctl border border-line bg-page px-3.5 text-ink'
 
 export function LoginForm() {
   const router = useRouter()

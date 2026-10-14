@@ -1,13 +1,14 @@
 'use client'
 
 import { useActionState } from 'react'
+import { SubmitButton } from '@/components/ui/submit-button'
 import { ASSIGNABLE_ROLES, ROLE_LABELS } from '@/lib/permissions'
 import { changeRole, type FormState } from '../actions'
 
 const INITIAL: FormState = { ok: false }
 
 export function RoleForm({ memberId, role }: { memberId: string; role: string }) {
-  const [state, action, pending] = useActionState(changeRole, INITIAL)
+  const [state, action] = useActionState(changeRole, INITIAL)
 
   return (
     <form action={action} className="flex flex-wrap items-center gap-2">
@@ -24,13 +25,12 @@ export function RoleForm({ memberId, role }: { memberId: string; role: string })
           </option>
         ))}
       </select>
-      <button
-        type="submit"
-        disabled={pending}
-        className="h-9 cursor-pointer rounded-ctl border border-line px-3 font-medium text-sm hover:bg-surface-2 disabled:cursor-wait disabled:opacity-60"
+      <SubmitButton
+        pendingLabel="Guardando…"
+        className="h-9 rounded-ctl border border-line px-3 font-medium text-sm hover:bg-surface-2"
       >
-        {pending ? 'Guardando…' : 'Guardar'}
-      </button>
+        Guardar
+      </SubmitButton>
       {state.error ? (
         <span role="alert" className="text-bad text-xs">
           {state.error}

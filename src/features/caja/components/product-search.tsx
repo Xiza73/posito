@@ -25,7 +25,7 @@ export function ProductSearch({ value, onChange }: Props) {
 
   return (
     <div className="flex gap-2.5">
-      <label className="flex h-12 min-w-0 flex-1 items-center gap-2.5 rounded-ctl border border-line bg-surface px-3.5 focus-within:border-accent">
+      <label className="field-box flex h-12 min-w-0 flex-1 items-center gap-2.5 rounded-ctl border border-line bg-surface px-3.5">
         <Icon d="M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM20 20l-3.5-3.5" />
         <span className="sr-only">Buscar producto o escanear código</span>
         <input
@@ -34,7 +34,7 @@ export function ProductSearch({ value, onChange }: Props) {
           value={value}
           onChange={(e) => onChange(e.target.value)}
           placeholder="Buscar o escanear código"
-          className="w-0 min-w-0 flex-1 bg-transparent text-[15px] outline-none"
+          className="w-0 min-w-0 flex-1 bg-transparent text-[15px]"
         />
         <kbd className="hidden rounded-sm border border-line px-1.5 py-0.5 font-mono text-[11px] text-muted md:inline">
           F2

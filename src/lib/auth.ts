@@ -12,6 +12,11 @@ export const auth = betterAuth({
   database: drizzleAdapter(db, { provider: 'pg' }),
   // Sin registro público: los usuarios se crean con scripts/create-bodega.ts o desde Usuarios.
   emailAndPassword: { enabled: true, disableSignUp: true, minPasswordLength: 8 },
+  // Cookie firmada con la sesión: evita un viaje a la DB (Lima -> São Paulo) en cada navegación.
+  // Costo: una sesión revocada sigue válida hasta 5 min. La membresía/rol NO depende de esto:
+  // getCurrentMember() y hasPermission() consultan `member` en la DB en cada request, así que
+  // quitar a alguien de la bodega o cambiarle el rol surte efecto de inmediato.
+  session: { cookieCache: { enabled: true, maxAge: 5 * 60 } },
   databaseHooks: {
     session: {
       create: {

@@ -2,12 +2,7 @@
 
 import { useState } from 'react'
 import { formatCents } from '@/lib/format'
-import {
-  type Category,
-  catalogByKey,
-  catalogItems,
-  MADE_TO_ORDER_STOCK,
-} from '../data/products.mock'
+import { type CatalogProduct, canAddMore, matchesQuery } from '../lib/catalog'
 import { computeTotals, itemCount } from '../lib/totals'
 import { CategoryChips } from './category-chips'
 import { MobileCart } from './mobile-cart'
@@ -17,45 +12,51 @@ import { ProductSearch } from './product-search'
 import type { CartLineView } from './ticket-lines'
 import { TicketPanel } from './ticket-panel'
 
-/** clave de catálogo -> cantidad. */
+/** id de producto -> cantidad. */
 type Cart = Record<string, number>
 
-export function CajaScreen() {
+type Props = {
+  products: CatalogProduct[]
+  /** Categorías con al menos un producto activo (los chips agregan "Todos"). */
+  categories: string[]
+}
+
+export function CajaScreen({ products, categories }: Props) {
   const [query, setQuery] = useState('')
-  const [category, setCategory] = useState<Category>('Todos')
+  const [category, setCategory] = useState<string | null>(null)
   const [cart, setCart] = useState<Cart>({})
   const [pay, setPay] = useState<PaymentMethod>('Efectivo')
   const [sheetOpen, setSheetOpen] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
 
-  const q = query.trim().toLowerCase()
-  const visible = catalogItems.filter(
-    (it) =>
-      (category === 'Todos' || it.category === category) &&
-      (!q || it.label.toLowerCase().includes(q) || it.sku.toLowerCase().includes(q)),
+  const byId = new Map(products.map((p) => [p.id, p]))
+  const visible = products.filter(
+    (p) => (category === null || p.category === category) && matchesQuery(p, query),
   )
 
-  const lines: CartLineView[] = Object.entries(cart).flatMap(([key, qty]) => {
-    const item = catalogByKey.get(key)
+  const lines: CartLineView[] = Object.entries(cart).flatMap(([id, qty]) => {
+    const item = byId.get(id)
     return item ? [{ item, qty }] : []
   })
   const priced = lines.map((l) => ({ unitPriceCents: l.item.priceCents, qty: l.qty }))
   const totals = computeTotals(priced)
   const count = itemCount(priced)
 
-  function add(key: string) {
+  function add(id: string) {
     setNotice(null)
-    changeQty(key, 1)
+    changeQty(id, 1)
   }
 
-  function changeQty(key: string, delta: 1 | -1) {
+  function changeQty(id: string, delta: 1 | -1) {
     setCart((prev) => {
+      const item = byId.get(id)
+      if (!item) return prev
+      const current = prev[id] ?? 0
+      if (delta > 0 && !canAddMore(item, current)) return prev
+      const qty = current + delta
       const next = { ...prev }
-      const qty = (next[key] ?? 0) + delta
-      const stock = catalogByKey.get(key)?.stock ?? 0
-      if (delta > 0 && stock < MADE_TO_ORDER_STOCK && qty > stock) return prev
-      if (qty <= 0) delete next[key]
-      else next[key] = qty
+      if (qty <= 0) delete next[id]
+      else next[id] = qty
       return next
     })
   }
@@ -67,6 +68,8 @@ export function CajaScreen() {
 
   function charge() {
     if (lines.length === 0) return
+    // ponytail: cobro simulado, sin escribir en la DB. La venta real (sale + stock_movement en
+    // una transacción) llega con el PR de cobro.
     setNotice(`Venta cobrada: ${formatCents(totals.total)} (${pay})`)
     clear()
   }
@@ -80,7 +83,7 @@ export function CajaScreen() {
         }`}
       >
         <ProductSearch value={query} onChange={setQuery} />
-        <CategoryChips value={category} onChange={setCategory} />
+        <CategoryChips categories={categories} value={category} onChange={setCategory} />
         {visible.length === 0 ? (
           <p className="py-10 text-center text-muted text-sm">
             No hay productos que coincidan con tu búsqueda.
@@ -88,7 +91,7 @@ export function CajaScreen() {
         ) : (
           <div className="grid grid-cols-[repeat(auto-fill,minmax(140px,1fr))] gap-3">
             {visible.map((item) => (
-              <ProductCard key={item.key} item={item} onAdd={add} />
+              <ProductCard key={item.id} item={item} onAdd={add} />
             ))}
           </div>
         )}
