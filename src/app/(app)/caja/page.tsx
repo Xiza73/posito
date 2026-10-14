@@ -27,5 +27,5 @@ export default async function CajaPage() {
     )
   }
 
-  return <CajaScreen products={products} categories={categories} />
+  return <CajaScreen products={products} categories={categories} businessName={organization.name} />
 }

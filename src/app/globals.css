@@ -135,3 +135,52 @@ select {
   background-repeat: no-repeat;
   cursor: pointer;
 }
+
+/* Impresión de la boleta (features/caja/components/receipt-dialog.tsx).
+   El <dialog data-receipt> se monta como hijo directo de <body> (portal): al imprimir se oculta
+   todo lo demás con display:none (no deja páginas en blanco, a diferencia de visibility) y la
+   boleta —que vive en la top layer— se fija arriba a la izquierda a 80 mm, negro sobre blanco.
+   Sin @layer a propósito: gana a las utilidades de Tailwind sin necesidad de !important. */
+@media print {
+  @page {
+    margin: 0;
+  }
+
+  body:has(dialog[data-receipt][open]) {
+    background: #fff;
+  }
+
+  body:has(dialog[data-receipt][open]) > :not(dialog[data-receipt]) {
+    display: none;
+  }
+
+  dialog[data-receipt][open] {
+    position: absolute;
+    inset: 0 auto auto 0;
+    width: 80mm;
+    max-width: none;
+    max-height: none;
+    margin: 0;
+    padding: 0;
+    overflow: visible;
+    border: 0;
+    border-radius: 0;
+    background: #fff;
+    color: #000;
+    box-shadow: none;
+  }
+
+  dialog[data-receipt]::backdrop {
+    display: none;
+  }
+
+  dialog[data-receipt] .receipt-paper {
+    padding: 4mm;
+    border-radius: 0;
+    color: #000;
+  }
+
+  dialog[data-receipt] .no-print {
+    display: none;
+  }
+}

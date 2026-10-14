@@ -101,7 +101,7 @@ export const sale = pgTable(
   {
     id: id(),
     organizationId: orgId(),
-    // Correlativo tipo B001-00038; el contador se implementa con el flujo de cobro
+    // Correlativo tipo B001-00038; el siguiente número sale de receipt_series (ver checkout.ts)
     series: text().notNull(),
     number: integer().notNull(),
     cashierId: text()
@@ -129,6 +129,26 @@ export const sale = pgTable(
       'sale_void_consistent',
       sql`(${t.status} = 'anulada') = (${t.voidedAt} is not null and ${t.voidedById} is not null)`,
     ),
+  ],
+)
+
+// Contador de boletas por bodega: una fila por organization. El cobro la incrementa con un
+// upsert atómico (el bloqueo de fila serializa los cobros concurrentes).
+export const receiptSeries = pgTable(
+  'receipt_series',
+  {
+    organizationId: text()
+      .primaryKey()
+      .references(() => organization.id, { onDelete: 'cascade' }),
+    // Formato SUNAT de boleta: B + 3 dígitos
+    series: text().notNull(),
+    // Último número emitido; el siguiente es lastNumber + 1
+    lastNumber: integer().default(0).notNull(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    check('receipt_series_format', sql`${t.series} ~ '^B[0-9]{3}$'`),
+    check('receipt_series_last_number_non_negative', sql`${t.lastNumber} >= 0`),
   ],
 )
 

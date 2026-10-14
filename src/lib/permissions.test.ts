@@ -26,6 +26,12 @@ describe('roles', () => {
     expect(roles.owner.authorize({ report: ['view'] }).success).toBe(true)
   })
 
+  it('solo owner y admin pueden actualizar la organization (Configuración); cajero no', () => {
+    expect(roles.owner.authorize({ organization: ['update'] }).success).toBe(true)
+    expect(roles.admin.authorize({ organization: ['update'] }).success).toBe(true)
+    expect(roles.cajero.authorize({ organization: ['update'] }).success).toBe(false)
+  })
+
   it('admin no puede eliminar la organization', () => {
     expect(roles.admin.authorize({ organization: ['delete'] }).success).toBe(false)
   })
