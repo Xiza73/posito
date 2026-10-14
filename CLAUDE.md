@@ -59,6 +59,7 @@ bun run db:generate    # genera migración SQL desde src/db/schema.ts
 bun run db:migrate     # aplica migraciones contra DATABASE_URL
 bun run db:studio      # explorador de la DB
 bun run bodega:create -- --nombre "Bodega X" --propietario "Ana Rojas" --email ana@x.pe   # alta de bodega (pide la contraseña por prompt)
+bun run seed:productos -- --slug bodega-x   # productos de demostración en una bodega existente (omite nombres ya creados)
 ```
 
 Puerta antes de commit: `bun run lint && bun run typecheck && bun run test`.
@@ -124,6 +125,7 @@ Regla: una feature **no importa** de otra feature; lo compartido sube a `compone
 **NO hacer**
 - No usar npm/yarn/pnpm ni agregar lockfiles distintos de `bun.lock`.
 - No usar floats para dinero.
+- Los productos no se borran, se desactivan (`active = false`): hay ventas que los referencian. Caja solo lee productos activos.
 - No commitear `.env*` (salvo `.env.example`), `CLAUDE.local.md` ni `.claude/settings.local.json`.
 - No hacer push directo a `dev` ni a `master`; no hacer squash ni rebase de ramas compartidas.
 - No agregar atribución de IA en commits, PRs ni docs.

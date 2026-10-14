@@ -1,0 +1,135 @@
+import { formatCents } from '@/lib/format'
+import type { ProductRow } from '../data/products'
+import { StockBadge } from './stock-badge'
+import { ToggleActiveButton } from './toggle-active-button'
+
+type Props = {
+  products: ProductRow[]
+  canUpdate: boolean
+  canDelete: boolean
+  onEdit: (product: ProductRow) => void
+}
+
+const TH = 'px-4 py-3 font-medium'
+
+function InactiveTag() {
+  return (
+    <span className="ml-2 rounded-full border border-line px-2 py-0.5 font-normal text-muted text-xs">
+      Inactivo
+    </span>
+  )
+}
+
+function Actions({ p, canUpdate, canDelete, onEdit }: { p: ProductRow } & Omit<Props, 'products'>) {
+  // Desactivar pide product:delete; reactivar y editar piden product:update.
+  const canToggle = p.active ? canDelete : canUpdate
+  if (!canUpdate && !canToggle) return null
+  return (
+    <div className="flex items-start justify-end gap-2">
+      {canUpdate ? (
+        <button
+          type="button"
+          onClick={() => onEdit(p)}
+          aria-label={`Editar ${p.name}`}
+          className="h-9 cursor-pointer rounded-ctl border border-line px-3 font-medium text-sm hover:bg-surface-2"
+        >
+          Editar
+        </button>
+      ) : null}
+      {canToggle ? <ToggleActiveButton id={p.id} name={p.name} active={p.active} /> : null}
+    </div>
+  )
+}
+
+/** Tabla en md+ y tarjetas en móvil. */
+export function ProductsList({ products, ...actions }: Props) {
+  const showActions = actions.canUpdate || actions.canDelete
+
+  if (products.length === 0) {
+    return (
+      <p className="rounded-card border border-line bg-surface p-8 text-center text-muted text-sm">
+        No hay productos para mostrar.
+      </p>
+    )
+  }
+
+  return (
+    <>
+      <table className="hidden w-full overflow-hidden rounded-card border border-line bg-surface text-left text-sm md:table">
+        <thead className="bg-surface-2 text-muted">
+          <tr>
+            <th scope="col" className={TH}>
+              Producto
+            </th>
+            <th scope="col" className={TH}>
+              Categoría
+            </th>
+            <th scope="col" className={`${TH} text-right`}>
+              Stock
+            </th>
+            <th scope="col" className={`${TH} text-right`}>
+              Precio
+            </th>
+            {showActions ? (
+              <th scope="col" className={`${TH} text-right`}>
+                <span className="sr-only">Acciones</span>
+              </th>
+            ) : null}
+          </tr>
+        </thead>
+        <tbody>
+          {products.map((p) => (
+            <tr key={p.id} className={`border-line border-t ${p.active ? '' : 'opacity-60'}`}>
+              <td className="px-4 py-3">
+                <div className="font-medium">
+                  {p.name}
+                  {p.active ? null : <InactiveTag />}
+                </div>
+                {p.barcode ? <div className="font-mono text-muted text-xs">{p.barcode}</div> : null}
+              </td>
+              <td className="px-4 py-3 text-muted">{p.categoryName ?? '—'}</td>
+              <td className="px-4 py-3 text-right">
+                <StockBadge {...p} />
+              </td>
+              <td className="px-4 py-3 text-right font-mono">{formatCents(p.priceCents)}</td>
+              {showActions ? (
+                <td className="px-4 py-3">
+                  <Actions p={p} {...actions} />
+                </td>
+              ) : null}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      <ul className="flex flex-col gap-2.5 md:hidden">
+        {products.map((p) => (
+          <li
+            key={p.id}
+            className={`flex flex-col gap-3 rounded-card border border-line bg-surface p-4 ${
+              p.active ? '' : 'opacity-60'
+            }`}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="font-medium">
+                  {p.name}
+                  {p.active ? null : <InactiveTag />}
+                </div>
+                <div className="text-muted text-xs">
+                  {p.categoryName ?? 'Sin categoría'}
+                  {p.barcode ? <span className="font-mono"> · {p.barcode}</span> : null}
+                </div>
+              </div>
+              <div className="flex flex-none flex-col items-end gap-0.5">
+                <span className="font-mono text-sm">{formatCents(p.priceCents)}</span>
+                <StockBadge {...p} />
+              </div>
+            </div>
+            {showActions ? <Actions p={p} {...actions} /> : null}
+          </li>
+        ))}
+      </ul>
+    </>
+  )
+}
