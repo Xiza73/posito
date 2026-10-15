@@ -75,6 +75,13 @@ function toErrorState(
       fieldErrors: { barcode: ['Ya existe un producto con ese código de barras'] },
     }
   }
+  if (constraint === 'product_org_name_key_uq') {
+    return {
+      ok: false,
+      values,
+      fieldErrors: { name: ['Ya existe un producto con ese nombre'] },
+    }
+  }
   if (constraint === 'category_org_name_uq') {
     return {
       ok: false,

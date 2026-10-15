@@ -46,9 +46,11 @@ export const category = pgTable(
     id: id(),
     organizationId: orgId(),
     name: text().notNull(),
+    // Clave de comparación (src/lib/name-key.ts); `name` es solo para mostrar
+    nameKey: text().notNull(),
     createdAt: createdAt(),
   },
-  (t) => [uniqueIndex('category_org_name_uq').on(t.organizationId, t.name)],
+  (t) => [uniqueIndex('category_org_name_uq').on(t.organizationId, t.nameKey)],
 )
 
 export const product = pgTable(
@@ -58,6 +60,7 @@ export const product = pgTable(
     organizationId: orgId(),
     categoryId: uuid().references(() => category.id, { onDelete: 'set null' }),
     name: text().notNull(),
+    nameKey: text().notNull(),
     barcode: text(),
     priceCents: integer().notNull(),
     // false = se prepara al momento (ej. café pasado): no descuenta stock
@@ -71,6 +74,7 @@ export const product = pgTable(
   },
   (t) => [
     index('product_org_idx').on(t.organizationId),
+    uniqueIndex('product_org_name_key_uq').on(t.organizationId, t.nameKey),
     uniqueIndex('product_org_barcode_uq').on(t.organizationId, t.barcode),
     check('product_price_non_negative', sql`${t.priceCents} >= 0`),
     check('product_stock_non_negative', sql`${t.stock} >= 0`),

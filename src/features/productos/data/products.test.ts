@@ -310,3 +310,92 @@ describe('categorías', () => {
     ).toBe(true)
   })
 })
+
+describe('nombres únicos por bodega (name_key)', () => {
+  it('producto: "Inca Kola 500 ml" vs "inca  kola 500 ML" viola product_org_name_key_uq', async () => {
+    await createProduct(db, {
+      orgId: ORG_A,
+      userId: USER,
+      input: input({ name: 'Inca Kola 500 ml' }),
+    })
+    const err = await createProduct(db, {
+      orgId: ORG_A,
+      userId: USER,
+      input: input({ name: 'inca  kola 500 ML' }),
+    }).catch((e: unknown) => e)
+    expect(uniqueViolation(err)).toBe('product_org_name_key_uq')
+  })
+
+  it('producto: el mismo nombre en OTRA bodega es válido', async () => {
+    await expect(
+      createProduct(db, { orgId: ORG_B, userId: USER, input: input({ name: 'Inca Kola 500 ml' }) }),
+    ).resolves.toBeDefined()
+  })
+
+  it('producto: editar a un nombre equivalente al de otro viola la unicidad; el propio no', async () => {
+    const { id } = await createProduct(db, {
+      orgId: ORG_A,
+      userId: USER,
+      input: input({ name: 'Pan francés' }),
+    })
+    const err = await updateProduct(db, {
+      orgId: ORG_A,
+      id,
+      input: input({ name: 'INCA KOLA 500 ML' }),
+    }).catch((e: unknown) => e)
+    expect(uniqueViolation(err)).toBe('product_org_name_key_uq')
+    // re-guardar con otra capitalización del MISMO producto es válido
+    await expect(
+      updateProduct(db, { orgId: ORG_A, id, input: input({ name: 'PAN FRANCES' }) }),
+    ).resolves.toEqual({ id })
+  })
+
+  it('producto: guarda el nombre normalizado para mostrar y la clave aparte', async () => {
+    const { id } = await createProduct(db, {
+      orgId: ORG_A,
+      userId: USER,
+      input: input({ name: '  Té   Verde ' }),
+    })
+    expect(await rowOf(id)).toMatchObject({ name: 'Té Verde', nameKey: 'te verde' })
+  })
+
+  it('producto: "Año" y "Ano" conviven (la ñ es otra letra)', async () => {
+    await createProduct(db, { orgId: ORG_A, userId: USER, input: input({ name: 'Añejo' }) })
+    await expect(
+      createProduct(db, { orgId: ORG_A, userId: USER, input: input({ name: 'Anejo' }) }),
+    ).resolves.toBeDefined()
+  })
+
+  it('categoría: "Hogar" y luego "hogar" viola category_org_name_uq', async () => {
+    await createCategory(db, { orgId: ORG_A, name: 'Hogar' })
+    const err = await createCategory(db, { orgId: ORG_A, name: 'hogar' }).catch((e: unknown) => e)
+    expect(uniqueViolation(err)).toBe('category_org_name_uq')
+  })
+
+  it('categoría: renombrar a "LÁCTEOS" cuando existe "Lacteos" viola la unicidad', async () => {
+    await createCategory(db, { orgId: ORG_A, name: 'Lacteos' })
+    const { id } = await createCategory(db, { orgId: ORG_A, name: 'Otra' })
+    const err = await renameCategory(db, { orgId: ORG_A, id, name: 'LÁCTEOS' }).catch(
+      (e: unknown) => e,
+    )
+    expect(uniqueViolation(err)).toBe('category_org_name_uq')
+  })
+
+  it('categoría al vuelo: "lacteos" reutiliza "Lacteos" en vez de crear otra', async () => {
+    const cats = async () =>
+      (await listCategoriesWithCounts(db, ORG_A)).filter((c) => c.name === 'Lacteos')
+    const [before] = await cats()
+    const { id } = await createProduct(db, {
+      orgId: ORG_A,
+      userId: USER,
+      input: input({ name: 'Yogurt', categoryName: 'lácteos' }),
+    })
+    expect((await rowOf(id)).categoryId).toBe(before.id)
+    expect(await cats()).toHaveLength(1)
+  })
+
+  it('categoría: "Año" y "Ano" conviven', async () => {
+    await createCategory(db, { orgId: ORG_A, name: 'Año' })
+    await expect(createCategory(db, { orgId: ORG_A, name: 'Ano' })).resolves.toBeDefined()
+  })
+})

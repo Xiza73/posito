@@ -46,7 +46,14 @@ async function newProduct(
 ): Promise<string> {
   const [p] = await db
     .insert(schema.product)
-    .values({ organizationId: orgId, name: 'Inca Kola', priceCents: 300, stock: 10, ...over })
+    .values({
+      organizationId: orgId,
+      name: 'Inca Kola',
+      nameKey: crypto.randomUUID(), // único por fila: los fixtures repiten `name`
+      priceCents: 300,
+      stock: 10,
+      ...over,
+    })
     .returning({ id: schema.product.id })
   return p.id
 }
