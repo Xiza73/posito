@@ -68,7 +68,7 @@ export async function listProducts(
 }
 
 /** Busca la categoría por `name_key` (sin mayúsculas, tildes ni espacios sobrantes) en la bodega, o la crea. */
-async function findOrCreateCategory(db: Db, orgId: string, name: string): Promise<string> {
+export async function findOrCreateCategory(db: Db, orgId: string, name: string): Promise<string> {
   const key = nameKey(name)
   // Insertar primero y, si ya existe, leer: dos altas simultáneas de "Hogar"/"hogar" terminan en
   // la MISMA categoría en vez de que la segunda falle (ON CONFLICT espera al commit de la otra).

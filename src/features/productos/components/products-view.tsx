@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from 'react'
 import type { ProductRow } from '../data/products'
+import { ImportDialog } from './import-dialog'
 import { ProductFilters } from './product-filters'
 import { ProductFormDialog } from './product-form-dialog'
 import { ProductsList } from './products-list'
@@ -16,6 +17,7 @@ type Props = {
 /** Orquesta filtros, lista y el diálogo de alta/edición. */
 export function ProductsView({ products, categories, filters, perms }: Props) {
   const [target, setTarget] = useState<ProductRow | 'new' | null>(null)
+  const [importing, setImporting] = useState(false)
   // Mientras llega la lista nueva, la actual está obsoleta: no se puede actuar sobre sus filas.
   const [isPending, startTransition] = useTransition()
 
@@ -31,13 +33,22 @@ export function ProductsView({ products, categories, filters, perms }: Props) {
           startTransition={startTransition}
         />
         {perms.create ? (
-          <button
-            type="button"
-            onClick={() => setTarget('new')}
-            className="h-11 cursor-pointer rounded-ctl bg-accent px-4 font-semibold text-accent-ink text-sm"
-          >
-            Nuevo producto
-          </button>
+          <>
+            <button
+              type="button"
+              onClick={() => setTarget('new')}
+              className="h-11 cursor-pointer rounded-ctl bg-accent px-4 font-semibold text-accent-ink text-sm"
+            >
+              Nuevo producto
+            </button>
+            <button
+              type="button"
+              onClick={() => setImporting(true)}
+              className="h-11 cursor-pointer rounded-ctl border border-line px-4 font-medium text-sm hover:bg-surface-2"
+            >
+              Importar
+            </button>
+          </>
         ) : null}
       </div>
 
@@ -58,6 +69,8 @@ export function ProductsView({ products, categories, filters, perms }: Props) {
           onEdit={setTarget}
         />
       </div>
+
+      {importing ? <ImportDialog onClose={() => setImporting(false)} /> : null}
 
       {perms.create || perms.update ? (
         <ProductFormDialog
