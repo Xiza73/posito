@@ -1,5 +1,5 @@
-import { formatReceiptNumber } from '@/lib/receipt'
-import { type ReceiptLine, receiptLines, receiptTitle, type SaleSummary } from './receipt'
+import { formatReceiptNumber } from './receipt'
+import { type ReceiptLine, receiptLines, receiptTitle, type SaleSummary } from './receipt-lines'
 
 // ~80 mm a ~180 dpi: la boleta como imagen para compartir (WhatsApp, etc.)
 const WIDTH = 576

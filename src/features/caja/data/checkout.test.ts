@@ -5,7 +5,7 @@ import { drizzle } from 'drizzle-orm/pglite'
 import { migrate } from 'drizzle-orm/pglite/migrator'
 import { beforeAll, describe, expect, it } from 'vitest'
 import * as schema from '@/db/schema'
-import { PAYMENT_METHODS } from '../lib/payment'
+import { PAYMENT_METHODS } from '@/lib/payment'
 import { CheckoutError, checkout, InsufficientStockError } from './checkout'
 
 // Migraciones reales sobre Postgres en memoria (PGlite), igual que src/db/schema.test.ts.

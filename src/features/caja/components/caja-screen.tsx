@@ -1,16 +1,16 @@
 'use client'
 
 import { useRef, useState, useTransition } from 'react'
+import { ReceiptDialog } from '@/components/receipt/receipt-dialog'
+import type { PaymentMethod } from '@/lib/payment'
+import type { SaleSummary } from '@/lib/receipt-lines'
 import { checkoutAction } from '../actions'
 import { type CatalogProduct, canAddMore, matchesQuery } from '../lib/catalog'
-import type { PaymentMethod } from '../lib/payment'
-import type { SaleSummary } from '../lib/receipt'
 import { computeTotals, itemCount } from '../lib/totals'
 import { CategoryChips } from './category-chips'
 import { MobileCart } from './mobile-cart'
 import { ProductCard } from './product-card'
 import { ProductSearch } from './product-search'
-import { ReceiptDialog } from './receipt-dialog'
 import type { CartLineView } from './ticket-lines'
 import { TicketPanel } from './ticket-panel'
 
@@ -163,7 +163,12 @@ export function CajaScreen({ products, categories, businessName }: Props) {
           onCharge={charge}
         />
       </div>
-      <ReceiptDialog sale={receipt} businessName={businessName} onClose={() => setReceipt(null)} />
+      <ReceiptDialog
+        sale={receipt}
+        businessName={businessName}
+        closeLabel="Nueva venta"
+        onClose={() => setReceipt(null)}
+      />
     </>
   )
 }

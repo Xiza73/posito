@@ -46,3 +46,6 @@ export function roleLabel(role: string): string {
 export function can(role: string, request: Parameters<(typeof roles)['admin']['authorize']>[0]) {
   return role in roles && roles[role as RoleName].authorize(request).success
 }
+
+/** Ve las ventas de todos (lista, detalle, totales, CSV). UNA sola regla para la UI y los datos. */
+export const seesAllSales = (role: string) => can(role, { report: ['view'] })

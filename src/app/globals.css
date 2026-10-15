@@ -136,7 +136,7 @@ select {
   cursor: pointer;
 }
 
-/* Impresión de la boleta (features/caja/components/receipt-dialog.tsx).
+/* Impresión de la boleta (components/receipt/receipt-dialog.tsx).
    El <dialog data-receipt> se monta como hijo directo de <body> (portal): al imprimir se oculta
    todo lo demás con display:none (no deja páginas en blanco, a diferencia de visibility) y la
    boleta —que vive en la top layer— se fija arriba a la izquierda a 80 mm, negro sobre blanco.

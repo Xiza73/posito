@@ -15,6 +15,13 @@
       "when": 1791954937944,
       "tag": "0001_receipt_series",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1792022638906,
+      "tag": "0002_ventas_integrity",
+      "breakpoints": true
     }
   ]
 }

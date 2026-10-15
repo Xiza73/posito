@@ -81,6 +81,33 @@ describe('esquema: restricciones de integridad', () => {
     ).resolves.toBeDefined()
   })
 
+  it('stock_movement: signo según tipo (venta < 0, anulación/ingreso > 0)', async () => {
+    const base = { organizationId: ORG, productId, userId: USER }
+    await expect(
+      db.insert(schema.stockMovement).values({ ...base, type: 'ingreso', quantity: -1 }),
+    ).rejects.toThrow()
+    await expect(
+      db.insert(schema.stockMovement).values({ ...base, type: 'ingreso', quantity: 3 }),
+    ).resolves.toBeDefined()
+    await expect(
+      db.insert(schema.stockMovement).values({ ...base, type: 'ajuste', quantity: -2 }),
+    ).resolves.toBeDefined()
+  })
+
+  it('stock_movement: una venta no descuenta ni devuelve dos veces el mismo producto', async () => {
+    const [s] = await sale().returning()
+    const mv = {
+      organizationId: ORG,
+      productId,
+      userId: USER,
+      saleId: s.id,
+      type: 'anulacion' as const,
+      quantity: 1,
+    }
+    await db.insert(schema.stockMovement).values(mv)
+    await expect(db.insert(schema.stockMovement).values(mv)).rejects.toThrow()
+  })
+
   it('acepta una serie de boleta válida', async () => {
     await expect(
       db.insert(schema.receiptSeries).values({ organizationId: ORG, series: 'B001' }),

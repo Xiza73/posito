@@ -1,4 +1,4 @@
-import { PAYMENT_LABELS, PAYMENT_METHODS, type PaymentMethod } from '../lib/payment'
+import { PAYMENT_LABELS, PAYMENT_METHODS, type PaymentMethod } from '@/lib/payment'
 
 type Props = {
   value: PaymentMethod
