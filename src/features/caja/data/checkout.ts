@@ -2,9 +2,9 @@ import { and, asc, eq, inArray, sql } from 'drizzle-orm'
 import { product, receiptSeries, sale, saleItem, stockMovement, user } from '@/db/schema'
 import type { Db } from '@/lib/db-types'
 import { uniqueViolation } from '@/lib/errors'
+import type { PaymentMethod } from '@/lib/payment'
 import { DEFAULT_RECEIPT_SERIES } from '@/lib/receipt'
-import type { PaymentMethod } from '../lib/payment'
-import type { SaleSummary } from '../lib/receipt'
+import type { SaleSummary } from '@/lib/receipt-lines'
 import { MAX_QTY } from '../lib/schemas'
 import { computeTotals } from '../lib/totals'
 
@@ -216,6 +216,9 @@ async function findExisting(
       igvCents: sale.igvCents,
       totalCents: sale.totalCents,
       cashierName: user.name,
+      status: sale.status,
+      voidedAt: sale.voidedAt,
+      voidReason: sale.voidReason,
     })
     .from(sale)
     .leftJoin(user, eq(user.id, sale.cashierId))
@@ -248,6 +251,9 @@ async function findExisting(
     igvCents: row.igvCents,
     totalCents: row.totalCents,
     cashierName: row.cashierName,
+    status: row.status,
+    voidedAt: row.voidedAt?.toISOString() ?? null,
+    voidReason: row.voidReason,
   }
 }
 

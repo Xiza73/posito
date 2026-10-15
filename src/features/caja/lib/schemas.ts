@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { PAYMENT_METHODS } from './payment'
+import { PAYMENT_METHODS } from '@/lib/payment'
 
 export const MAX_QTY = 999
 

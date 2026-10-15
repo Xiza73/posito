@@ -2,7 +2,7 @@
 
 import { useEffect } from 'react'
 import { formatCents } from '@/lib/format'
-import type { PaymentMethod } from '../lib/payment'
+import type { PaymentMethod } from '@/lib/payment'
 import { PaymentMethods } from './payment-methods'
 import { type CartLineView, TicketLines } from './ticket-lines'
 

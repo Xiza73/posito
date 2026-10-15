@@ -2,25 +2,27 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { type ReceiptLine, receiptLines, receiptTitle, type SaleSummary } from '../lib/receipt'
-import { shareReceiptImage } from '../lib/receipt-image'
+import { shareReceiptImage } from '@/lib/receipt-image'
+import { type ReceiptLine, receiptLines, receiptTitle, type SaleSummary } from '@/lib/receipt-lines'
 
 type Props = {
   /** null = cerrado. */
   sale: SaleSummary | null
   businessName: string
   onClose: () => void
+  /** Texto del botón principal (en caja: "Nueva venta"). */
+  closeLabel?: string
 }
 
 /**
- * Boleta de la venta recién cobrada, en un `<dialog>` nativo. Se monta en `document.body` para que
+ * Boleta de una venta (recién cobrada o consultada en Ventas; si está anulada lo dice), en un `<dialog>` nativo. Se monta en `document.body` para que
  * el CSS de impresión (globals.css) pueda ocultar el resto de la página sin ocultar la boleta.
  * Solo se renderiza tras una interacción en el cliente, así que `document` siempre existe.
  */
-export function ReceiptDialog({ sale, businessName, onClose }: Props) {
+export function ReceiptDialog({ sale, businessName, onClose, closeLabel = 'Cerrar' }: Props) {
   if (!sale) return null
   return createPortal(
-    <Receipt sale={sale} businessName={businessName} onClose={onClose} />,
+    <Receipt sale={sale} businessName={businessName} onClose={onClose} closeLabel={closeLabel} />,
     document.body,
   )
 }
@@ -29,10 +31,12 @@ function Receipt({
   sale,
   businessName,
   onClose,
+  closeLabel,
 }: {
   sale: SaleSummary
   businessName: string
   onClose: () => void
+  closeLabel: string
 }) {
   const dialogRef = useRef<HTMLDialogElement>(null)
   const newSaleRef = useRef<HTMLButtonElement>(null)
@@ -51,7 +55,7 @@ function Receipt({
     try {
       await shareReceiptImage(sale, businessName)
     } catch (e) {
-      console.error('[caja] compartir boleta falló', e)
+      console.error('[boleta] compartir boleta falló', e)
       setError('No se pudo generar la imagen. Usa Imprimir / PDF.')
     } finally {
       setSharing(false)
@@ -102,7 +106,7 @@ function Receipt({
           onClick={onClose}
           className="col-span-2 h-12 cursor-pointer rounded-ctl bg-accent font-semibold text-accent-ink text-sm"
         >
-          Nueva venta
+          {closeLabel}
         </button>
       </div>
     </dialog>

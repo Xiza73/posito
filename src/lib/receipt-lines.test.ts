@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { formatReceiptDate, receiptLines, receiptTitle, type SaleSummary } from './receipt'
+import { formatReceiptDate, receiptLines, receiptTitle, type SaleSummary } from './receipt-lines'
 
 const sale: SaleSummary = {
   id: 'x',
@@ -15,6 +15,9 @@ const sale: SaleSummary = {
   igvCents: 105,
   totalCents: 690,
   cashierName: 'Ana Rojas',
+  status: 'completada',
+  voidedAt: null,
+  voidReason: null,
 }
 
 const rows = (lines: ReturnType<typeof receiptLines>) =>
@@ -49,6 +52,39 @@ describe('receiptLines', () => {
     const last = receiptLines({ ...sale, cashierName: null }, 'X')
     expect(last.at(-1)).toMatchObject({ text: 'Gracias por su compra' })
     expect(rows(last).join()).not.toContain('Cajero/a')
+  })
+})
+
+describe('receiptLines: venta anulada', () => {
+  const voided: SaleSummary = {
+    ...sale,
+    status: 'anulada',
+    voidedAt: '2026-10-15T15:30:00.000Z', // 10:30 en Lima
+    voidReason: 'Error de cobro',
+  }
+  const text = receiptLines(voided, 'X').flatMap((l) => (l.kind === 'center' ? [l.text] : []))
+
+  it('muestra el sello ANULADA, la fecha de anulación y el motivo', () => {
+    expect(text.join(' ')).toContain('ANULADA')
+    expect(text.some((t) => /15\/10\/2026.*10:30/.test(t))).toBe(true)
+    expect(text).toContain('Motivo: Error de cobro')
+  })
+
+  it('no agradece la compra: aclara que el documento no tiene validez', () => {
+    expect(text).not.toContain('Gracias por su compra')
+    expect(text.at(-1)).toMatch(/anulada/)
+  })
+
+  it('una venta vigente no lleva marca de anulación', () => {
+    const ok = receiptLines(sale, 'X').flatMap((l) => (l.kind === 'center' ? [l.text] : []))
+    expect(ok.join(' ')).not.toMatch(/ANULADA|Motivo/)
+  })
+
+  it('omite el motivo si no hay', () => {
+    const t = receiptLines({ ...voided, voidReason: null }, 'X').flatMap((l) =>
+      l.kind === 'center' ? [l.text] : [],
+    )
+    expect(t.join(' ')).not.toContain('Motivo')
   })
 })
 

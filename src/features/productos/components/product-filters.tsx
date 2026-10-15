@@ -2,6 +2,7 @@
 
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { type TransitionStartFunction, useRef } from 'react'
+import { ClearFiltersButton } from '@/components/ui/clear-filters-button'
 import { Icon } from '@/components/ui/icon'
 
 type Props = {
@@ -88,6 +89,9 @@ export function ProductFilters({
           Mostrar inactivos
         </label>
       ) : null}
+      <ClearFiltersButton
+        onClear={() => startTransition(() => router.replace(pathname, { scroll: false }))}
+      />
       <button type="submit" className="sr-only">
         Buscar
       </button>

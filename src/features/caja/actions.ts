@@ -3,9 +3,9 @@
 import { revalidatePath } from 'next/cache'
 import { db } from '@/lib/db'
 import { isNextControlFlow } from '@/lib/errors'
+import type { SaleSummary } from '@/lib/receipt-lines'
 import { getCurrentMember } from '@/lib/session'
 import { CheckoutError, checkout, InsufficientStockError } from './data/checkout'
-import type { SaleSummary } from './lib/receipt'
 import { checkoutInputSchema } from './lib/schemas'
 
 export type CheckoutResult = { ok: true; sale: SaleSummary } | { ok: false; error: string }

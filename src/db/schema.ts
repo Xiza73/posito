@@ -196,7 +196,16 @@ export const stockMovement = pgTable(
   },
   (t) => [
     index('stock_movement_product_created_idx').on(t.productId, t.createdAt),
+    // Anular busca los movimientos de UNA venta: sin este índice recorre toda la tabla con locks tomados
+    index('stock_movement_sale_idx').on(t.saleId),
+    // Red de seguridad en la DB: una venta no puede descontar ni devolver dos veces el mismo
+    // producto, aunque un refactor futuro rompa el lock de la app (saleId null = distinto en Postgres)
+    uniqueIndex('stock_movement_sale_product_type_uq').on(t.saleId, t.productId, t.type),
     check('stock_movement_quantity_non_zero', sql`${t.quantity} <> 0`),
+    check(
+      'stock_movement_sign_by_type',
+      sql`(${t.type} <> 'venta' or ${t.quantity} < 0) and (${t.type} not in ('anulacion', 'ingreso') or ${t.quantity} > 0)`,
+    ),
     check(
       'stock_movement_sale_link',
       sql`(${t.type} in ('venta', 'anulacion')) = (${t.saleId} is not null)`,
