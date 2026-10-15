@@ -29,6 +29,7 @@ async function newProduct(
     .values({
       organizationId: orgId,
       name: 'Inca Kola 500 ml',
+      nameKey: uuid(), // único por fila: los fixtures repiten `name`
       priceCents: 300,
       stock: 10,
       ...over,

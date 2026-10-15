@@ -22,6 +22,27 @@
       "when": 1792022638906,
       "tag": "0002_ventas_integrity",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1792076194086,
+      "tag": "0003_names_key_columns",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1792076202478,
+      "tag": "0004_names_backfill",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1792076243568,
+      "tag": "0005_names_unique",
+      "breakpoints": true
     }
   ]
 }

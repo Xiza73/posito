@@ -6,6 +6,7 @@ import { and, asc, eq, like } from 'drizzle-orm'
 import { member, organization, product } from '@/db/schema'
 import { createProduct } from '@/features/productos/data/products'
 import { db } from '@/lib/db'
+import { nameKey } from '@/lib/name-key'
 
 type Seed = {
   name: string
@@ -71,15 +72,15 @@ async function main() {
   const existing = new Set(
     (
       await db
-        .select({ name: product.name })
+        .select({ key: product.nameKey })
         .from(product)
         .where(eq(product.organizationId, org.id))
-    ).map((p) => p.name),
+    ).map((p) => p.key),
   )
 
   let created = 0
   for (const s of SEEDS) {
-    if (existing.has(s.name)) continue
+    if (existing.has(nameKey(s.name))) continue
     const tracksStock = s.tracksStock ?? true
     await createProduct(db, {
       orgId: org.id,

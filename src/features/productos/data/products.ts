@@ -2,6 +2,7 @@ import { and, asc, eq, ilike, or, sql } from 'drizzle-orm'
 import type { PgDatabase } from 'drizzle-orm/pg-core'
 import type * as schema from '@/db/schema'
 import { category, product, stockMovement } from '@/db/schema'
+import { nameKey, normalizeDisplayName } from '@/lib/name-key'
 import type { ProductInput } from '../lib/schemas'
 
 // Todas las funciones reciben `db` (o una transacción) para poder probarlas con PGlite, y
@@ -66,19 +67,23 @@ export async function listProducts(
     .orderBy(asc(product.name))
 }
 
-/** Busca la categoría por nombre (sin distinguir mayúsculas) en la bodega, o la crea. */
+/** Busca la categoría por `name_key` (sin mayúsculas, tildes ni espacios sobrantes) en la bodega, o la crea. */
 async function findOrCreateCategory(db: Db, orgId: string, name: string): Promise<string> {
+  const key = nameKey(name)
+  // Insertar primero y, si ya existe, leer: dos altas simultáneas de "Hogar"/"hogar" terminan en
+  // la MISMA categoría en vez de que la segunda falle (ON CONFLICT espera al commit de la otra).
+  const [created] = await db
+    .insert(category)
+    .values({ organizationId: orgId, name: normalizeDisplayName(name), nameKey: key })
+    .onConflictDoNothing({ target: [category.organizationId, category.nameKey] })
+    .returning({ id: category.id })
+  if (created) return created.id
   const [existing] = await db
     .select({ id: category.id })
     .from(category)
-    .where(and(eq(category.organizationId, orgId), sql`lower(${category.name}) = lower(${name})`))
+    .where(and(eq(category.organizationId, orgId), eq(category.nameKey, key)))
     .limit(1)
-  if (existing) return existing.id
-  const [created] = await db
-    .insert(category)
-    .values({ organizationId: orgId, name })
-    .returning({ id: category.id })
-  return created.id
+  return existing.id
 }
 
 /**
@@ -100,7 +105,8 @@ export async function createProduct(
       .values({
         organizationId: orgId,
         categoryId,
-        name: input.name,
+        name: normalizeDisplayName(input.name),
+        nameKey: nameKey(input.name),
         barcode: input.barcode,
         priceCents: input.priceCents,
         tracksStock: input.tracksStock,
@@ -146,7 +152,8 @@ export async function updateProduct(
       .update(product)
       .set({
         categoryId,
-        name: input.name,
+        name: normalizeDisplayName(input.name),
+        nameKey: nameKey(input.name),
         barcode: input.barcode,
         priceCents: input.priceCents,
         tracksStock: input.tracksStock,
@@ -185,14 +192,14 @@ export async function listCategoriesWithCounts(db: Db, orgId: string): Promise<C
     .orderBy(asc(category.name))
 }
 
-/** Alta explícita desde Categorías. Un nombre repetido en la bodega viola `category_org_name_uq`. */
+/** Alta explícita desde Categorías. Un nombre repetido (según `nameKey`) viola `category_org_name_uq`. */
 export async function createCategory(
   db: Db,
   { orgId, name }: { orgId: string; name: string },
 ): Promise<{ id: string }> {
   const [created] = await db
     .insert(category)
-    .values({ organizationId: orgId, name })
+    .values({ organizationId: orgId, name: normalizeDisplayName(name), nameKey: nameKey(name) })
     .returning({ id: category.id })
   return created
 }
@@ -203,7 +210,7 @@ export async function renameCategory(
 ): Promise<boolean> {
   const rows = await db
     .update(category)
-    .set({ name })
+    .set({ name: normalizeDisplayName(name), nameKey: nameKey(name) })
     .where(and(eq(category.id, id), eq(category.organizationId, orgId)))
     .returning({ id: category.id })
   return rows.length > 0

@@ -22,7 +22,13 @@ beforeAll(async () => {
   await db.insert(schema.user).values({ id: USER, name: 'Ana', email: 'ana@test.pe' })
   const [p] = await db
     .insert(schema.product)
-    .values({ organizationId: ORG, name: 'Inca Kola 500 ml', priceCents: 300, stock: 5 })
+    .values({
+      organizationId: ORG,
+      name: 'Inca Kola 500 ml',
+      nameKey: 'inca kola 500 ml',
+      priceCents: 300,
+      stock: 5,
+    })
     .returning()
   productId = p.id
 })
@@ -75,8 +81,14 @@ describe('esquema: restricciones de integridad', () => {
   it('permite varios productos sin código de barras', async () => {
     await expect(
       db.insert(schema.product).values([
-        { organizationId: ORG, name: 'Pan francés', priceCents: 30 },
-        { organizationId: ORG, name: 'Café pasado', priceCents: 350, tracksStock: false },
+        { organizationId: ORG, name: 'Pan francés', nameKey: 'pan frances', priceCents: 30 },
+        {
+          organizationId: ORG,
+          name: 'Café pasado',
+          nameKey: 'cafe pasado',
+          priceCents: 350,
+          tracksStock: false,
+        },
       ]),
     ).resolves.toBeDefined()
   })
