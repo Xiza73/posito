@@ -10,6 +10,7 @@ import {
   type Permissions,
   requirePermission,
 } from '@/lib/session'
+import { commitImport, previewImport } from './data/import'
 import {
   createCategory,
   createProduct,
@@ -18,6 +19,8 @@ import {
   setProductActive,
   updateProduct,
 } from './data/products'
+import { IMPORT_MAX_ROWS, type RawImportRow } from './lib/import-parse'
+import type { ImportPreview, ImportSummary } from './lib/import-validate'
 import { categoryNameSchema, idSchema, productInputSchema } from './lib/schemas'
 
 /** Valores crudos del formulario de producto, para repoblarlo tras un error. */
@@ -246,4 +249,74 @@ export async function deleteCategoryAction(
 
   revalidateCatalog()
   return { ok: true, message: 'Categoría eliminada' }
+}
+
+// --- Importación masiva (CSV / Excel) ---
+
+const rawRowSchema = z.object({
+  line: z.number().int().min(1).max(1_000_000),
+  name: z.string().max(1000),
+  price: z.string().max(1000),
+  category: z.string().max(1000),
+  barcode: z.string().max(1000),
+  stock: z.string().max(1000),
+  minStock: z.string().max(1000),
+  tracksStock: z.string().max(1000),
+})
+const rawRowsSchema = z.array(rawRowSchema).min(1).max(IMPORT_MAX_ROWS)
+const commitSchema = z.object({ rows: rawRowsSchema, updateExisting: z.boolean() })
+
+const INVALID_FILE = 'El archivo no es válido. Vuelve a cargarlo.'
+const IMPORT_RACE =
+  'Otro usuario modificó los productos durante la importación. Vuelve a revisar el archivo.'
+
+export type PreviewImportResult = ({ ok: true } & ImportPreview) | { ok: false; error: string }
+
+export type CommitImportResult = { ok: true; summary: ImportSummary } | { ok: false; error: string }
+
+/** Vista previa: valida y clasifica contra el catálogo vigente. No escribe nada. */
+export async function previewImportAction(rows: RawImportRow[]): Promise<PreviewImportResult> {
+  const parsed = rawRowsSchema.safeParse(rows)
+  if (!parsed.success) return { ok: false, error: INVALID_FILE }
+
+  try {
+    const { organization } = await authorize({ product: ['create'] })
+    const preview = await previewImport(db, { orgId: organization.id, rows: parsed.data })
+    return { ok: true, ...preview }
+  } catch (e) {
+    if (isNextControlFlow(e)) throw e
+    if (e instanceof ForbiddenError) return { ok: false, error: e.message }
+    console.error('[productos] vista previa de importación falló', e)
+    return { ok: false, error: GENERIC_ERROR }
+  }
+}
+
+/** Confirmación: el servidor re-valida y re-clasifica dentro de la transacción (no confía en la vista previa). */
+export async function commitImportAction(input: {
+  rows: RawImportRow[]
+  updateExisting: boolean
+}): Promise<CommitImportResult> {
+  const parsed = commitSchema.safeParse(input)
+  if (!parsed.success) return { ok: false, error: INVALID_FILE }
+  const { rows, updateExisting } = parsed.data
+
+  try {
+    const { organization, user } = await authorize({
+      product: updateExisting ? ['create', 'update'] : ['create'],
+    })
+    const summary = await commitImport(db, {
+      orgId: organization.id,
+      userId: user.id,
+      rows,
+      updateExisting,
+    })
+    revalidateCatalog()
+    return { ok: true, summary }
+  } catch (e) {
+    if (isNextControlFlow(e)) throw e
+    if (e instanceof ForbiddenError) return { ok: false, error: e.message }
+    if (uniqueViolation(e) !== null) return { ok: false, error: IMPORT_RACE }
+    console.error('[productos] importación falló', e)
+    return { ok: false, error: GENERIC_ERROR }
+  }
 }
