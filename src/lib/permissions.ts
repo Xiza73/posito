@@ -6,7 +6,7 @@ export const statements = {
   ...defaultStatements,
   product: ['create', 'update', 'delete'],
   stock: ['adjust'],
-  sale: ['void'],
+  sale: ['void', 'approve'],
   report: ['view'],
 } as const
 
@@ -15,7 +15,7 @@ export const ac = createAccessControl(statements)
 const business = {
   product: ['create', 'update', 'delete'],
   stock: ['adjust'],
-  sale: ['void'],
+  sale: ['void', 'approve'],
   report: ['view'],
 } as const
 

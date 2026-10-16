@@ -3,8 +3,10 @@
 import { revalidatePath } from 'next/cache'
 import { db } from '@/lib/db'
 import { isNextControlFlow } from '@/lib/errors'
+import { can } from '@/lib/permissions'
 import type { SaleSummary } from '@/lib/receipt-lines'
 import { getCurrentMember } from '@/lib/session'
+import { getSettings } from '@/lib/settings'
 import { CheckoutError, checkout, InsufficientStockError } from './data/checkout'
 import { checkoutInputSchema } from './lib/schemas'
 
@@ -21,15 +23,21 @@ export async function checkoutAction(input: unknown): Promise<CheckoutResult> {
   if (!parsed.success) return { ok: false, error: 'El ticket no es válido. Revisa los productos.' }
 
   try {
-    const { organization, user } = await getCurrentMember()
+    const { organization, user, member } = await getCurrentMember()
+    // Lista blanca: solo quien PUEDE aprobar cobra sin validación. Un rol desconocido o compuesto
+    // queda pendiente (falla hacia el lado seguro), en vez de comparar con el string 'cajero'.
+    const { requireSaleApproval } = await getSettings(db, organization.id)
     const sale = await checkout(db, {
-      // La sesión va al final: ningún campo del input puede pisar orgId/userId
+      // La sesión va al final: ningún campo del input puede pisar orgId/userId/requireApproval
       ...parsed.data,
       orgId: organization.id,
       userId: user.id,
+      requireApproval: requireSaleApproval && !can(member.role, { sale: ['approve'] }),
     })
     revalidatePath('/caja')
     revalidatePath('/productos')
+    // Si quedó pendiente, el listado de ventas (y el contador del menú) deben mostrarla
+    revalidatePath('/ventas')
     return { ok: true, sale }
   } catch (e) {
     if (isNextControlFlow(e)) throw e

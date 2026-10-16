@@ -40,7 +40,11 @@ export default async function VentaPage({ params }: { params: Promise<{ id: stri
   const number = formatReceiptNumber(sale.series, sale.number)
   const voided = sale.status === 'anulada'
   const mayVoid = can(member.role, { sale: ['void'] })
-  const canVoid = mayVoid && !voided && sale.withinVoidWindow
+  const pending = sale.status === 'pendiente'
+  // Una pendiente se rechaza (anula) sin ventana de 7 días; una completada, solo dentro de ella
+  const canVoid = mayVoid && sale.status === 'completada' && sale.withinVoidWindow
+  const canReject = mayVoid && pending
+  const canApprove = pending && can(member.role, { sale: ['approve'] })
 
   return (
     <div className="flex max-w-3xl animate-fade-up flex-col gap-4 p-4 md:px-7 md:py-6">
@@ -65,6 +69,32 @@ export default async function VentaPage({ params }: { params: Promise<{ id: stri
           </p>
           {sale.voidReason ? <p className="mt-1">Motivo: {sale.voidReason}</p> : null}
           <p className="mt-1 text-muted">Los productos volvieron al inventario.</p>
+        </section>
+      ) : null}
+
+      {pending ? (
+        <section
+          aria-label="Validación pendiente"
+          className="rounded-card border border-warn bg-surface p-4 text-sm"
+        >
+          <p className="font-medium text-warn">Venta por validar</p>
+          <p className="mt-1 text-muted">
+            El cliente ya se llevó los productos y el inventario ya se descontó. Un administrador
+            debe aprobarla o rechazarla (al rechazarla, los productos vuelven al inventario).
+          </p>
+        </section>
+      ) : null}
+
+      {sale.approvedAt ? (
+        <section
+          aria-label="Datos de la aprobación"
+          className="rounded-card border border-line bg-surface p-4 text-sm"
+        >
+          <p className="font-medium">Venta validada</p>
+          <p className="mt-1 text-muted">
+            {formatReceiptDate(sale.approvedAt)}
+            {sale.approvedByName ? ` · por ${sale.approvedByName}` : ''}
+          </p>
         </section>
       ) : null}
 
@@ -134,9 +164,15 @@ export default async function VentaPage({ params }: { params: Promise<{ id: stri
         </table>
       </div>
 
-      <SaleActions sale={sale} businessName={organization.name} canVoid={canVoid} />
+      <SaleActions
+        sale={sale}
+        businessName={organization.name}
+        canVoid={canVoid}
+        canApprove={canApprove}
+        canReject={canReject}
+      />
 
-      {mayVoid && !voided && !sale.withinVoidWindow ? (
+      {mayVoid && sale.status === 'completada' && !sale.withinVoidWindow ? (
         <p className="text-muted text-sm">
           Solo se pueden anular ventas de los últimos {VOID_WINDOW_DAYS} días.
         </p>

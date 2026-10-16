@@ -52,6 +52,12 @@ describe('parseSalesSearchParams', () => {
     expect(page).toBe(3)
   })
 
+  it('acepta el estado "pendiente" (Por validar) y lo conserva en el query string', () => {
+    const { filters } = parseSalesSearchParams({ estado: 'pendiente' }, NOW)
+    expect(filters.status).toBe('pendiente')
+    expect(salesQueryString(filters)).toContain('estado=pendiente')
+  })
+
   it('una fecha límite como 9999-12-31 se descarta (antes daba 500)', () => {
     for (const raw of [{ hasta: '9999-12-31' }, { desde: '9999-12-31' }, { desde: '1999-12-31' }]) {
       expect(() => parseSalesSearchParams(raw, NOW)).not.toThrow()

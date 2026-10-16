@@ -31,7 +31,11 @@ const updatedAt = () =>
     .$onUpdate(() => new Date())
 
 export const paymentMethod = pgEnum('payment_method', ['efectivo', 'yape_plin', 'tarjeta'])
-export const saleStatus = pgEnum('sale_status', ['completada', 'anulada'])
+// 'pendiente' = vendida (descontó stock y tomó correlativo) a la espera de que un admin la apruebe
+// o rechace. OJO migraciones: un valor nuevo de enum no se puede USAR en la transacción que lo agrega,
+// y drizzle corre TODAS las migraciones pendientes en una sola. Por eso ningún CHECK/DDL debe
+// nombrar 'pendiente' (ver CLAUDE.md §7).
+export const saleStatus = pgEnum('sale_status', ['completada', 'anulada', 'pendiente'])
 export const stockMovementType = pgEnum('stock_movement_type', [
   'venta',
   'anulacion',
@@ -122,6 +126,9 @@ export const sale = pgTable(
     voidedAt: timestamp({ withTimezone: true }),
     voidedById: text().references(() => user.id, { onDelete: 'restrict' }),
     voidReason: text(),
+    // Quien aprobó una venta que estaba pendiente (null = nunca pasó por validación)
+    approvedAt: timestamp({ withTimezone: true }),
+    approvedById: text().references(() => user.id, { onDelete: 'restrict' }),
     createdAt: createdAt(),
   },
   (t) => [
@@ -133,8 +140,20 @@ export const sale = pgTable(
       'sale_void_consistent',
       sql`(${t.status} = 'anulada') = (${t.voidedAt} is not null and ${t.voidedById} is not null)`,
     ),
+    check('sale_approval_consistent', sql`(${t.approvedAt} is null) = (${t.approvedById} is null)`),
   ],
 )
+
+// Ajustes de negocio por bodega (una fila por organization; sin fila = valores por defecto).
+// Aquí vivirán los futuros ajustes de la bodega.
+export const organizationSettings = pgTable('organization_settings', {
+  organizationId: text()
+    .primaryKey()
+    .references(() => organization.id, { onDelete: 'cascade' }),
+  // true = las ventas de los cajeros quedan 'pendiente' hasta que un admin las apruebe
+  requireSaleApproval: boolean().default(false).notNull(),
+  updatedAt: updatedAt(),
+})
 
 // Contador de boletas por bodega: una fila por organization. El cobro la incrementa con un
 // upsert atómico (el bloqueo de fila serializa los cobros concurrentes).

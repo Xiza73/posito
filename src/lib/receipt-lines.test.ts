@@ -94,3 +94,26 @@ describe('helpers', () => {
     expect(receiptTitle(sale)).toBe('Boleta de venta B001-00038')
   })
 })
+
+describe('receiptLines: venta pendiente de validación', () => {
+  const pending: SaleSummary = { ...sale, status: 'pendiente' }
+  const centers = (s: SaleSummary) =>
+    receiptLines(s, 'X').flatMap((l) => (l.kind === 'center' ? [l.text] : []))
+
+  it('lleva la leyenda "VENTA SUJETA A VALIDACIÓN" y sigue siendo un documento válido', () => {
+    const text = centers(pending)
+    expect(text).toContain('VENTA SUJETA A VALIDACIÓN')
+    expect(text).not.toContain('*** ANULADA ***')
+    expect(text).toContain('Gracias por su compra')
+  })
+
+  it('una venta completada no lleva la leyenda', () => {
+    expect(centers(sale)).not.toContain('VENTA SUJETA A VALIDACIÓN')
+  })
+
+  it('al rechazarla (anulada) muestra ANULADA y no la leyenda de validación', () => {
+    const text = centers({ ...pending, status: 'anulada', voidedAt: '2026-10-14T19:00:00.000Z' })
+    expect(text).toContain('*** ANULADA ***')
+    expect(text).not.toContain('VENTA SUJETA A VALIDACIÓN')
+  })
+})

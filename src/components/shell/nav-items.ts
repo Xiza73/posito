@@ -4,6 +4,8 @@ export type NavItem = {
   icon: string
   /** Solo para quien gestiona la bodega (owner/admin). */
   manage?: boolean
+  /** Lleva el contador de ventas por validar. */
+  pending?: boolean
 }
 
 export const ICONS = {
@@ -35,7 +37,7 @@ export function visibleItems(items: NavItem[], canManage: boolean): NavItem[] {
 export const NAV_ITEMS: NavItem[] = [
   item('inicio', '/', 'Inicio'),
   item('caja', '/caja', 'Caja'),
-  item('ventas', '/ventas', 'Ventas'),
+  { ...item('ventas', '/ventas', 'Ventas'), pending: true },
   item('productos', '/productos', 'Productos'),
   item('inventario', '/inventario', 'Inventario'),
   item('clientes', '/clientes', 'Clientes'),

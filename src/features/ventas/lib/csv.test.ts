@@ -88,6 +88,11 @@ describe('toCsv', () => {
     expect(out.slice(1).split('\r\n')[1]).toMatch(/,Anulada,.*,"Otro: se cobró, doble"$/)
   })
 
+  it('venta pendiente sale como "Por validar"', () => {
+    const out = toCsv([{ ...row, status: 'pendiente' }])
+    expect(out.slice(1).split('\r\n')[1]).toMatch(/,Por validar,/)
+  })
+
   it('cajero o producto maliciosos salen neutralizados', () => {
     const out = toCsv([
       { ...row, cashierName: '=cmd|calc', items: [{ name: 'x', qty: 1 }], voidReason: '@x' },

@@ -3,7 +3,7 @@ import { PAYMENT_LABELS, type PaymentMethod } from '@/lib/payment'
 import { formatReceiptNumber } from '@/lib/receipt'
 
 /** Mismos valores que el enum `sale_status` de la DB. */
-export type SaleStatus = 'completada' | 'anulada'
+export type SaleStatus = 'completada' | 'anulada' | 'pendiente'
 
 /**
  * Venta tal como la devuelve el servidor (serializable: sin Date). El estado SIEMPRE sale de la
@@ -65,12 +65,19 @@ function voidedLines(sale: SaleSummary): ReceiptLine[] {
   return out
 }
 
+/** Venta que un administrador aún debe validar: la boleta lo dice (el estado viene del servidor). */
+function pendingLines(sale: SaleSummary): ReceiptLine[] {
+  if (sale.status !== 'pendiente') return []
+  return [{ kind: 'gap' }, { kind: 'center', text: 'VENTA SUJETA A VALIDACIÓN', bold: true }]
+}
+
 export function receiptLines(sale: SaleSummary, businessName: string): ReceiptLine[] {
   const out: ReceiptLine[] = [
     { kind: 'center', text: businessName.toUpperCase(), bold: true, large: true },
     { kind: 'center', text: receiptTitle(sale) },
     { kind: 'center', text: formatReceiptDate(sale.createdAt) },
     ...voidedLines(sale),
+    ...pendingLines(sale),
     { kind: 'rule' },
   ]
   for (const l of sale.lines) {

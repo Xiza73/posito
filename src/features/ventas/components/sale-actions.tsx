@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { ReceiptDialog } from '@/components/receipt/receipt-dialog'
 import type { SaleSummary } from '@/lib/receipt-lines'
+import { ApproveSaleDialog } from './approve-sale-dialog'
 import { VoidSaleDialog } from './void-sale-dialog'
 
 type Props = {
@@ -10,12 +11,18 @@ type Props = {
   businessName: string
   /** Puede anular: permiso `sale:void`, venta completada y dentro de la ventana (calculado en el servidor). */
   canVoid: boolean
+  /** Venta pendiente y permiso `sale:approve`. */
+  canApprove: boolean
+  /** Venta pendiente y permiso `sale:void`: rechazar = anular sin ventana de 7 días. */
+  canReject: boolean
 }
 
-/** Botones del detalle: ver/reimprimir ticket y anular. */
-export function SaleActions({ sale, businessName, canVoid }: Props) {
+/** Botones del detalle: ver/reimprimir ticket, aprobar/rechazar (pendientes) y anular. */
+export function SaleActions({ sale, businessName, canVoid, canApprove, canReject }: Props) {
   const [showReceipt, setShowReceipt] = useState(false)
   const [showVoid, setShowVoid] = useState(false)
+  const [showApprove, setShowApprove] = useState(false)
+  const canCancel = canVoid || canReject
 
   return (
     <>
@@ -27,13 +34,22 @@ export function SaleActions({ sale, businessName, canVoid }: Props) {
         >
           Ver ticket / Reimprimir
         </button>
-        {canVoid ? (
+        {canApprove ? (
+          <button
+            type="button"
+            onClick={() => setShowApprove(true)}
+            className="h-11 cursor-pointer rounded-ctl border border-ok px-5 font-semibold text-ok text-sm hover:bg-surface-2"
+          >
+            Aprobar
+          </button>
+        ) : null}
+        {canCancel ? (
           <button
             type="button"
             onClick={() => setShowVoid(true)}
             className="h-11 cursor-pointer rounded-ctl border border-bad px-5 font-semibold text-bad text-sm hover:bg-surface-2"
           >
-            Anular venta
+            {canReject ? 'Rechazar' : 'Anular venta'}
           </button>
         ) : null}
       </div>
@@ -43,8 +59,16 @@ export function SaleActions({ sale, businessName, canVoid }: Props) {
         businessName={businessName}
         onClose={() => setShowReceipt(false)}
       />
-      {canVoid ? (
-        <VoidSaleDialog open={showVoid} onClose={() => setShowVoid(false)} sale={sale} />
+      {canCancel ? (
+        <VoidSaleDialog
+          open={showVoid}
+          onClose={() => setShowVoid(false)}
+          sale={sale}
+          mode={canReject ? 'reject' : 'void'}
+        />
+      ) : null}
+      {canApprove ? (
+        <ApproveSaleDialog open={showApprove} onClose={() => setShowApprove(false)} sale={sale} />
       ) : null}
     </>
   )

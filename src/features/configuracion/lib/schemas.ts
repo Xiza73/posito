@@ -16,3 +16,10 @@ export const receiptSeriesSchema = z.object({
 })
 
 export type ReceiptSeriesInput = z.output<typeof receiptSeriesSchema>
+
+/** Un checkbox sin marcar no viaja en el FormData: ausente = false. */
+export const settingsSchema = z.object({
+  requireSaleApproval: z.boolean(),
+})
+
+export type SettingsInput = z.output<typeof settingsSchema>

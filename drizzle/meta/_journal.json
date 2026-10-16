@@ -43,6 +43,13 @@
       "when": 1792076243568,
       "tag": "0005_names_unique",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1792095534610,
+      "tag": "0006_sale_pending_status",
+      "breakpoints": true
     }
   ]
 }

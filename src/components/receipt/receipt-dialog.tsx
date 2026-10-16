@@ -78,6 +78,12 @@ function Receipt({
         ))}
       </div>
 
+      {sale.status === 'pendiente' ? (
+        <p role="note" className="no-print mt-3 text-muted text-sm">
+          Esta venta queda pendiente de validación por un administrador.
+        </p>
+      ) : null}
+
       {error ? (
         <p role="alert" className="no-print mt-3 text-bad text-sm">
           {error}

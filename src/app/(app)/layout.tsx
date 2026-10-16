@@ -1,6 +1,7 @@
 import { cookies } from 'next/headers'
 import { AppHeader } from '@/components/shell/app-header'
 import { BottomTabs } from '@/components/shell/bottom-tabs'
+import { PendingSalesProvider } from '@/components/shell/pending-badge'
 import { Sidebar } from '@/components/shell/sidebar'
 import { initials } from '@/lib/initials'
 import { can, roleLabel } from '@/lib/permissions'
@@ -23,21 +24,25 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const theme = parseTheme((await cookies()).get(THEME_COOKIE)?.value)
 
   return (
-    <div className="flex h-dvh overflow-hidden bg-page">
-      <Sidebar
-        user={{
-          name: user.name,
-          initials: initials(user.name),
-          roleLabel: roleLabel(member.role),
-          organizationName: organization.name,
-          canManage: can(member.role, { member: ['create'] }),
-        }}
-      />
-      <div className="flex min-w-0 flex-1 flex-col">
-        <AppHeader today={formatToday()} theme={theme} />
-        <main className="flex min-h-0 flex-1 flex-col overflow-auto pb-17 md:pb-0">{children}</main>
+    <PendingSalesProvider enabled={can(member.role, { sale: ['approve'] })}>
+      <div className="flex h-dvh overflow-hidden bg-page">
+        <Sidebar
+          user={{
+            name: user.name,
+            initials: initials(user.name),
+            roleLabel: roleLabel(member.role),
+            organizationName: organization.name,
+            canManage: can(member.role, { member: ['create'] }),
+          }}
+        />
+        <div className="flex min-w-0 flex-1 flex-col">
+          <AppHeader today={formatToday()} theme={theme} />
+          <main className="flex min-h-0 flex-1 flex-col overflow-auto pb-17 md:pb-0">
+            {children}
+          </main>
+        </div>
+        <BottomTabs />
       </div>
-      <BottomTabs />
-    </div>
+    </PendingSalesProvider>
   )
 }
