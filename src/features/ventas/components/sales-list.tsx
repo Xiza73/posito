@@ -1,10 +1,10 @@
 import Link from 'next/link'
+import { StatusBadge } from '@/components/ui/status-badge'
 import { formatCents } from '@/lib/format'
 import { PAYMENT_LABELS } from '@/lib/payment'
 import { formatReceiptNumber } from '@/lib/receipt'
 import { formatReceiptDate } from '@/lib/receipt-lines'
 import type { SaleListRow } from '../data/sales'
-import { StatusBadge } from './status-badge'
 
 const TH = 'px-4 py-3 font-medium'
 

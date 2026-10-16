@@ -50,6 +50,20 @@
       "when": 1792095534610,
       "tag": "0006_sale_pending_status",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1792167620830,
+      "tag": "0007_clientes",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1792169055836,
+      "tag": "0008_sale_customer_snapshot",
+      "breakpoints": true
     }
   ]
 }

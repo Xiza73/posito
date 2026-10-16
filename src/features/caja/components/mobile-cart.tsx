@@ -1,8 +1,10 @@
 'use client'
 
 import { useEffect } from 'react'
+import type { CustomerOption } from '@/lib/customer-input'
 import { formatCents } from '@/lib/format'
 import type { PaymentMethod } from '@/lib/payment'
+import { CustomerBar } from './customer-bar'
 import { PaymentMethods } from './payment-methods'
 import { type CartLineView, TicketLines } from './ticket-lines'
 
@@ -14,6 +16,10 @@ type Props = {
   pay: PaymentMethod
   error: string | null
   pending: boolean
+  customer: CustomerOption | null
+  customerLocked: boolean
+  onPickCustomer: () => void
+  onClearCustomer: () => void
   onOpen: () => void
   onClose: () => void
   onPay: (method: PaymentMethod) => void
@@ -30,6 +36,10 @@ export function MobileCart({
   pay,
   error,
   pending,
+  customer,
+  customerLocked,
+  onPickCustomer,
+  onClearCustomer,
   onOpen,
   onClose,
   onPay,
@@ -84,6 +94,13 @@ export function MobileCart({
             <div className="flex items-center justify-between px-5 pt-3.5 pb-2">
               <h2 className="font-semibold">Ticket actual</h2>
             </div>
+            <CustomerBar
+              customer={customer}
+              disabled={customerLocked || pending}
+              onPick={onPickCustomer}
+              onClear={onClearCustomer}
+              className="mx-5 mb-2"
+            />
             <div className="flex-1 overflow-auto px-5">
               <TicketLines lines={lines} onChangeQty={onChangeQty} large />
             </div>

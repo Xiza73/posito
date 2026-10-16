@@ -397,3 +397,151 @@ describe('checkout: correlativo', () => {
     expect(await stockOf(e)).toBe(9)
   })
 })
+
+describe('checkout: cliente', () => {
+  async function newCustomer(
+    over: Partial<typeof schema.customer.$inferInsert> = {},
+    orgId = ORG_A,
+  ): Promise<string> {
+    const [c] = await db
+      .insert(schema.customer)
+      .values({
+        organizationId: orgId,
+        name: 'Juan Pérez',
+        nameKey: 'juan perez',
+        documentType: 'dni',
+        documentNumber: uuid().slice(0, 8),
+        ...over,
+      })
+      .returning({ id: schema.customer.id })
+    return c.id
+  }
+
+  it('sin cliente la venta queda como público general (customer null)', async () => {
+    const id = await newProduct({ stock: 5 })
+    const s = await sell([{ productId: id, quantity: 1 }])
+    expect(s.customer).toBeNull()
+  })
+
+  it('guarda el cliente en la venta y lo devuelve con nombre y documento (de la DB)', async () => {
+    const id = await newProduct({ stock: 5 })
+    const customerId = await newCustomer({ documentType: 'ruc', documentNumber: '20100047218' })
+    const s = await sell([{ productId: id, quantity: 1 }], { customerId })
+
+    expect(s.customer).toEqual({
+      id: customerId,
+      name: 'Juan Pérez',
+      documentType: 'ruc',
+      documentNumber: '20100047218',
+    })
+    const [row] = await db.select().from(schema.sale).where(eq(schema.sale.id, s.id))
+    expect(row.customerId).toBe(customerId)
+  })
+
+  it('un cliente de otra bodega se rechaza y no escribe nada', async () => {
+    const id = await newProduct({ stock: 5 })
+    const foreign = await newCustomer({}, ORG_B)
+    const before = await count(schema.sale)
+
+    const err = await sell([{ productId: id, quantity: 1 }], { customerId: foreign }).catch(
+      (e) => e,
+    )
+    expect(err).toBeInstanceOf(CheckoutError)
+    expect(err.message).toBe('El cliente ya no está disponible')
+    expect(await count(schema.sale)).toBe(before)
+    expect(await stockOf(id)).toBe(5)
+  })
+
+  it('un cliente inactivo se rechaza', async () => {
+    const id = await newProduct({ stock: 5 })
+    const customerId = await newCustomer({ active: false })
+    const err = await sell([{ productId: id, quantity: 1 }], { customerId }).catch((e) => e)
+    expect(err).toBeInstanceOf(CheckoutError)
+    expect(err.message).toBe('El cliente ya no está disponible')
+    expect(await stockOf(id)).toBe(5)
+  })
+
+  it('un cliente inexistente se rechaza', async () => {
+    const id = await newProduct({ stock: 5 })
+    const err = await sell([{ productId: id, quantity: 1 }], { customerId: uuid() }).catch((e) => e)
+    expect(err).toBeInstanceOf(CheckoutError)
+  })
+
+  it('el reintento conserva el cliente de la venta original (idempotente)', async () => {
+    const id = await newProduct({ stock: 10 })
+    const customerId = await newCustomer()
+    const saleId = uuid()
+    const a = await sell([{ productId: id, quantity: 2 }], { saleId, customerId })
+    // Entre el cobro y el reintento el cliente se desactiva: el reintento devuelve lo ya guardado
+    await db
+      .update(schema.customer)
+      .set({ active: false })
+      .where(eq(schema.customer.id, customerId))
+    const b = await sell([{ productId: id, quantity: 2 }], { saleId, customerId })
+
+    expect(b).toEqual(a)
+    expect(b.customer?.id).toBe(customerId)
+    expect(await stockOf(id)).toBe(8)
+  })
+
+  it('snapshot: editar el cliente después NO cambia el nombre ni el documento de la venta ni del reintento', async () => {
+    const id = await newProduct({ stock: 10 })
+    const customerId = await newCustomer({
+      name: 'Juan Pérez',
+      documentType: 'dni',
+      documentNumber: '12345678',
+    })
+    const saleId = uuid()
+    const a = await sell([{ productId: id, quantity: 1 }], { saleId, customerId })
+
+    await db
+      .update(schema.customer)
+      .set({
+        name: 'Otro Nombre',
+        nameKey: 'otro nombre',
+        documentType: 'ruc',
+        documentNumber: '20999999999',
+      })
+      .where(eq(schema.customer.id, customerId))
+
+    const b = await sell([{ productId: id, quantity: 1 }], { saleId, customerId })
+    expect(b).toEqual(a)
+    expect(b.customer).toEqual({
+      id: customerId,
+      name: 'Juan Pérez',
+      documentType: 'dni',
+      documentNumber: '12345678',
+    })
+    const [row] = await db.select().from(schema.sale).where(eq(schema.sale.id, saleId))
+    expect(row).toMatchObject({
+      customerName: 'Juan Pérez',
+      customerDocumentType: 'dni',
+      customerDocumentNumber: '12345678',
+    })
+  })
+
+  it('un cliente sin documento guarda el snapshot solo con nombre', async () => {
+    const id = await newProduct({ stock: 5 })
+    const customerId = await newCustomer({
+      name: 'Doña Rosa',
+      documentType: null,
+      documentNumber: null,
+    })
+    const s = await sell([{ productId: id, quantity: 1 }], { customerId })
+    expect(s.customer).toEqual({
+      id: customerId,
+      name: 'Doña Rosa',
+      documentType: null,
+      documentNumber: null,
+    })
+  })
+
+  it('un reintento sin cliente no pisa el cliente guardado', async () => {
+    const id = await newProduct({ stock: 10 })
+    const customerId = await newCustomer()
+    const saleId = uuid()
+    await sell([{ productId: id, quantity: 1 }], { saleId, customerId })
+    const again = await sell([{ productId: id, quantity: 1 }], { saleId })
+    expect(again.customer?.id).toBe(customerId)
+  })
+})

@@ -1,9 +1,19 @@
+import { type DocumentType, formatDocument } from '@/lib/document'
 import { formatCents } from '@/lib/format'
 import { PAYMENT_LABELS, type PaymentMethod } from '@/lib/payment'
 import { formatReceiptNumber } from '@/lib/receipt'
 
 /** Mismos valores que el enum `sale_status` de la DB. */
 export type SaleStatus = 'completada' | 'anulada' | 'pendiente'
+
+/** Cliente de la venta, tal como lo guardó el servidor (nunca viene del cliente web). */
+export type SaleCustomer = {
+  /** null si el cliente ya no existe: el snapshot de la venta se conserva. */
+  id: string | null
+  name: string
+  documentType: DocumentType | null
+  documentNumber: string | null
+}
 
 /**
  * Venta tal como la devuelve el servidor (serializable: sin Date). El estado SIEMPRE sale de la
@@ -21,6 +31,8 @@ export type SaleSummary = {
   igvCents: number
   totalCents: number
   cashierName: string | null
+  /** null = público general. */
+  customer: SaleCustomer | null
   status: SaleStatus
   /** ISO 8601; solo si `status === 'anulada'`. */
   voidedAt: string | null
@@ -71,6 +83,17 @@ function pendingLines(sale: SaleSummary): ReceiptLine[] {
   return [{ kind: 'gap' }, { kind: 'center', text: 'VENTA SUJETA A VALIDACIÓN', bold: true }]
 }
 
+/** "Cliente: NOMBRE" + "DNI 12345678"; sin cliente, "Cliente: público general". */
+function customerLines(sale: SaleSummary): ReceiptLine[] {
+  const c = sale.customer
+  if (!c) return [{ kind: 'row', left: 'Cliente: público general', right: '' }]
+  const out: ReceiptLine[] = [{ kind: 'row', left: `Cliente: ${c.name}`, right: '' }]
+  if (c.documentType && c.documentNumber) {
+    out.push({ kind: 'row', left: formatDocument(c.documentType, c.documentNumber), right: '' })
+  }
+  return out
+}
+
 export function receiptLines(sale: SaleSummary, businessName: string): ReceiptLine[] {
   const out: ReceiptLine[] = [
     { kind: 'center', text: businessName.toUpperCase(), bold: true, large: true },
@@ -92,6 +115,7 @@ export function receiptLines(sale: SaleSummary, businessName: string): ReceiptLi
     { kind: 'row', left: 'Pago', right: PAYMENT_LABELS[sale.paymentMethod] },
   )
   if (sale.cashierName) out.push({ kind: 'row', left: 'Cajero/a', right: sale.cashierName })
+  out.push(...customerLines(sale))
   out.push({ kind: 'gap' })
   out.push(
     sale.status === 'anulada'

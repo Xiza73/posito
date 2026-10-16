@@ -5,6 +5,8 @@ import { adminAc, defaultStatements, ownerAc } from 'better-auth/plugins/organiz
 export const statements = {
   ...defaultStatements,
   product: ['create', 'update', 'delete'],
+  // 'delete' = desactivar (los clientes no se borran)
+  customer: ['create', 'update', 'delete'],
   stock: ['adjust'],
   sale: ['void', 'approve'],
   report: ['view'],
@@ -14,6 +16,7 @@ export const ac = createAccessControl(statements)
 
 const business = {
   product: ['create', 'update', 'delete'],
+  customer: ['create', 'update', 'delete'],
   stock: ['adjust'],
   sale: ['void', 'approve'],
   report: ['view'],
@@ -22,8 +25,9 @@ const business = {
 export const roles = {
   owner: ac.newRole({ ...ownerAc.statements, ...business }),
   admin: ac.newRole({ ...adminAc.statements, ...business }),
-  // El cajero solo usa la caja: sin permisos de negocio ni gestión de miembros.
-  cajero: ac.newRole({}),
+  // El cajero usa la caja y registra/corrige clientes; no desactiva ni tiene otros permisos de
+  // negocio ni gestión de miembros.
+  cajero: ac.newRole({ customer: ['create', 'update'] }),
 }
 
 export type RoleName = keyof typeof roles

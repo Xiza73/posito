@@ -865,3 +865,48 @@ describe('listas auxiliares de los filtros', () => {
     expect(names).toEqual(['Ana Rojas', 'Luis Paz', 'Rosa Admin'])
   })
 })
+
+describe('getSale: cliente', () => {
+  it('devuelve el cliente de la venta (nombre y documento) o null si es público general', async () => {
+    const id = await insertSale()
+    expect((await getSale(db, { orgId: ORG_A, viewer: admin, id }))?.customer).toBeNull()
+
+    const [c] = await db
+      .insert(schema.customer)
+      .values({
+        organizationId: ORG_A,
+        name: 'Juan Pérez',
+        nameKey: 'juan perez',
+        documentType: 'dni',
+        documentNumber: '12345678',
+      })
+      .returning({ id: schema.customer.id })
+    await db
+      .update(schema.sale)
+      .set({
+        customerId: c.id,
+        customerName: 'Juan Pérez',
+        customerDocumentType: 'dni',
+        customerDocumentNumber: '12345678',
+      })
+      .where(eq(schema.sale.id, id))
+
+    // Editar el cliente después NO cambia lo que muestra la venta (snapshot)
+    await db
+      .update(schema.customer)
+      .set({ name: 'Nombre Nuevo', nameKey: 'nombre nuevo', documentNumber: '99999999' })
+      .where(eq(schema.customer.id, c.id))
+
+    const detail = await getSale(db, { orgId: ORG_A, viewer: admin, id })
+    expect(detail?.customer).toEqual({
+      id: c.id,
+      name: 'Juan Pérez',
+      documentType: 'dni',
+      documentNumber: '12345678',
+    })
+    // El cajero dueño de la venta también la ve con su cliente
+    expect((await getSale(db, { orgId: ORG_A, viewer: ana, id }))?.customer?.name).toBe(
+      'Juan Pérez',
+    )
+  })
+})

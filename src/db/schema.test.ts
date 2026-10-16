@@ -65,6 +65,28 @@ describe('esquema: restricciones de integridad', () => {
     await expect(sale({ status: 'anulada' })).rejects.toThrow()
   })
 
+  it('una venta con cliente exige el snapshot de nombre; sin cliente no hace falta', async () => {
+    const [c] = await db
+      .insert(schema.customer)
+      .values({ organizationId: ORG, name: 'Ana', nameKey: 'ana' })
+      .returning({ id: schema.customer.id })
+    await expect(sale({ customerId: c.id })).rejects.toThrow()
+    await expect(sale({ customerId: c.id, customerName: 'Ana' })).resolves.toBeDefined()
+    await expect(sale()).resolves.toBeDefined()
+  })
+
+  it('el snapshot del documento va completo o vacío', async () => {
+    await expect(sale({ customerDocumentType: 'dni' })).rejects.toThrow()
+    await expect(sale({ customerDocumentNumber: '12345678' })).rejects.toThrow()
+    await expect(
+      sale({
+        customerName: 'Ana',
+        customerDocumentType: 'dni',
+        customerDocumentNumber: '12345678',
+      }),
+    ).resolves.toBeDefined()
+  })
+
   it('rechaza un correlativo duplicado en la misma serie', async () => {
     await sale({ number: 38 })
     await expect(sale({ number: 38 })).rejects.toThrow()

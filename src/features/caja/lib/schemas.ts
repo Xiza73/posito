@@ -7,6 +7,8 @@ export const MAX_QTY = 999
 export const checkoutInputSchema = z.object({
   saleId: z.uuid(),
   paymentMethod: z.enum(PAYMENT_METHODS),
+  /** Opcional: sin cliente = público general. El servidor verifica bodega y estado activo. */
+  customerId: z.uuid().nullish(),
   items: z
     .array(z.object({ productId: z.uuid(), quantity: z.int().min(1).max(MAX_QTY) }))
     .min(1)
