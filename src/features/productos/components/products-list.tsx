@@ -1,6 +1,6 @@
+import { StockBadge } from '@/components/ui/stock-badge'
 import { formatCents } from '@/lib/format'
 import type { ProductRow } from '../data/products'
-import { StockBadge } from './stock-badge'
 import { ToggleActiveButton } from './toggle-active-button'
 
 type Props = {
