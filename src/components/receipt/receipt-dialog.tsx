@@ -8,7 +8,6 @@ import { type ReceiptLine, receiptLines, receiptTitle, type SaleSummary } from '
 type Props = {
   /** null = cerrado. */
   sale: SaleSummary | null
-  businessName: string
   onClose: () => void
   /** Texto del botón principal (en caja: "Nueva venta"). */
   closeLabel?: string
@@ -19,22 +18,20 @@ type Props = {
  * el CSS de impresión (globals.css) pueda ocultar el resto de la página sin ocultar la boleta.
  * Solo se renderiza tras una interacción en el cliente, así que `document` siempre existe.
  */
-export function ReceiptDialog({ sale, businessName, onClose, closeLabel = 'Cerrar' }: Props) {
+export function ReceiptDialog({ sale, onClose, closeLabel = 'Cerrar' }: Props) {
   if (!sale) return null
   return createPortal(
-    <Receipt sale={sale} businessName={businessName} onClose={onClose} closeLabel={closeLabel} />,
+    <Receipt sale={sale} onClose={onClose} closeLabel={closeLabel} />,
     document.body,
   )
 }
 
 function Receipt({
   sale,
-  businessName,
   onClose,
   closeLabel,
 }: {
   sale: SaleSummary
-  businessName: string
   onClose: () => void
   closeLabel: string
 }) {
@@ -53,7 +50,7 @@ function Receipt({
     setError(null)
     setSharing(true)
     try {
-      await shareReceiptImage(sale, businessName)
+      await shareReceiptImage(sale)
     } catch (e) {
       console.error('[boleta] compartir boleta falló', e)
       setError('No se pudo generar la imagen. Usa Imprimir / PDF.')
@@ -72,7 +69,7 @@ function Receipt({
     >
       {/* El papel es siempre blanco con texto negro, en cualquier tema */}
       <div className="receipt-paper rounded-ctl bg-white px-5 py-6 font-mono text-[#111] text-xs leading-relaxed">
-        {receiptLines(sale, businessName).map((line, i) => (
+        {receiptLines(sale).map((line, i) => (
           // biome-ignore lint/suspicious/noArrayIndexKey: lista estática, nunca se reordena
           <ReceiptRow key={i} line={line} />
         ))}

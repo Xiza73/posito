@@ -5,9 +5,9 @@ import { z } from 'zod'
 import { db } from '@/lib/db'
 import { isNextControlFlow } from '@/lib/errors'
 import { ForbiddenError, getCurrentMember, requirePermission } from '@/lib/session'
-import { updateSettings } from '@/lib/settings'
+import { updateBusinessProfile, updateSettings } from '@/lib/settings'
 import { updateReceiptSeries } from './data/receipt-series'
-import { receiptSeriesSchema, settingsSchema } from './lib/schemas'
+import { businessProfileSchema, receiptSeriesSchema, settingsSchema } from './lib/schemas'
 
 export type ReceiptSeriesState = {
   ok: boolean
@@ -85,4 +85,53 @@ export async function updateSettingsAction(
 
   revalidatePath('/configuracion')
   return { ok: true, values, message: 'Ajustes guardados' }
+}
+
+const BUSINESS_FIELDS = [
+  'tradeName',
+  'legalName',
+  'ruc',
+  'address',
+  'phone',
+  'branchName',
+  'receiptFooter',
+] as const
+
+export type BusinessProfileState = {
+  ok: boolean
+  message?: string
+  error?: string
+  fieldErrors?: Record<string, string[] | undefined>
+  /** Valores crudos para repoblar el formulario tras un error. */
+  values?: Record<(typeof BUSINESS_FIELDS)[number], string>
+}
+
+/** Guarda los datos del negocio (boleta y menú). Exige `organization:update`. */
+export async function updateBusinessProfileAction(
+  _prev: BusinessProfileState,
+  formData: FormData,
+): Promise<BusinessProfileState> {
+  const values = Object.fromEntries(
+    BUSINESS_FIELDS.map((k) => [k, text(formData, k)]),
+  ) as NonNullable<BusinessProfileState['values']>
+  const parsed = businessProfileSchema.safeParse(values)
+  if (!parsed.success) {
+    return { ok: false, values, fieldErrors: z.flattenError(parsed.error).fieldErrors }
+  }
+
+  try {
+    // La bodega sale de la sesión, nunca del formulario
+    const { organization } = await getCurrentMember()
+    await requirePermission({ organization: ['update'] })
+    await updateBusinessProfile(db, { orgId: organization.id, input: parsed.data })
+  } catch (e) {
+    if (isNextControlFlow(e)) throw e
+    if (e instanceof ForbiddenError) return { ok: false, values, error: e.message }
+    console.error('[configuracion] guardar datos del negocio falló', e)
+    return { ok: false, values, error: GENERIC_ERROR }
+  }
+
+  // El nombre y la sucursal salen en el menú; caja y ventas arman la boleta con el perfil
+  revalidatePath('/', 'layout')
+  return { ok: true, message: 'Datos del negocio guardados' }
 }

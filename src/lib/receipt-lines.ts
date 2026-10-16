@@ -1,3 +1,4 @@
+import type { BusinessSnapshot } from '@/lib/business-profile'
 import { type DocumentType, formatDocument } from '@/lib/document'
 import { formatCents } from '@/lib/format'
 import { PAYMENT_LABELS, type PaymentMethod } from '@/lib/payment'
@@ -37,6 +38,8 @@ export type SaleSummary = {
   /** ISO 8601; solo si `status === 'anulada'`. */
   voidedAt: string | null
   voidReason: string | null
+  /** Datos del negocio al momento del cobro (snapshot): la boleta nunca usa el perfil vivo. */
+  business: BusinessSnapshot
 }
 
 /** Texto de la boleta como datos: lo usan el modal (DOM) y la imagen (canvas). */
@@ -94,9 +97,21 @@ function customerLines(sale: SaleSummary): ReceiptLine[] {
   return out
 }
 
-export function receiptLines(sale: SaleSummary, businessName: string): ReceiptLine[] {
+/** Encabezado: nombre comercial, razón social + RUC, dirección y teléfono (los que existan). */
+function headerLines(b: BusinessSnapshot): ReceiptLine[] {
   const out: ReceiptLine[] = [
-    { kind: 'center', text: businessName.toUpperCase(), bold: true, large: true },
+    { kind: 'center', text: b.tradeName.toUpperCase(), bold: true, large: true },
+  ]
+  if (b.legalName) out.push({ kind: 'center', text: b.legalName })
+  if (b.ruc) out.push({ kind: 'center', text: `RUC ${b.ruc}` })
+  if (b.address) out.push({ kind: 'center', text: b.address })
+  if (b.phone) out.push({ kind: 'center', text: `Tel. ${b.phone}` })
+  return out
+}
+
+export function receiptLines(sale: SaleSummary): ReceiptLine[] {
+  const out: ReceiptLine[] = [
+    ...headerLines(sale.business),
     { kind: 'center', text: receiptTitle(sale) },
     { kind: 'center', text: formatReceiptDate(sale.createdAt) },
     ...voidedLines(sale),
@@ -120,7 +135,7 @@ export function receiptLines(sale: SaleSummary, businessName: string): ReceiptLi
   out.push(
     sale.status === 'anulada'
       ? { kind: 'center', text: 'Documento sin validez: venta anulada' }
-      : { kind: 'center', text: 'Gracias por su compra' },
+      : { kind: 'center', text: sale.business.receiptFooter },
   )
   return out
 }

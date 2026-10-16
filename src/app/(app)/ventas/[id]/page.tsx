@@ -188,13 +188,7 @@ export default async function VentaPage({ params }: { params: Promise<{ id: stri
         </table>
       </div>
 
-      <SaleActions
-        sale={sale}
-        businessName={organization.name}
-        canVoid={canVoid}
-        canApprove={canApprove}
-        canReject={canReject}
-      />
+      <SaleActions sale={sale} canVoid={canVoid} canApprove={canApprove} canReject={canReject} />
 
       {mayVoid && sale.status === 'completada' && !sale.withinVoidWindow ? (
         <p className="text-muted text-sm">

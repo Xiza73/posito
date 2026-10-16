@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { DOCUMENT_TYPES, type DocumentType, normalizeDocument, validateDocument } from './document'
+import { NO_CONTROL_MESSAGE, noControl } from './text-guard'
 
 // Esquema de alta/edición de clientes, compartido por Clientes y el alta rápida de la Caja.
 // Módulo puro (sin servidor): lo usan Server Actions y componentes. El servidor SIEMPRE re-valida.
@@ -16,13 +17,6 @@ export type CustomerOption = {
 }
 
 export const DUPLICATE_DOCUMENT_MESSAGE = 'Ya existe un cliente con ese documento'
-
-// Caracteres de control (\p{Cc}: saltos, tab...) y de formato (\p{Cf}: U+200B, U+202E...) no
-// tienen sitio en un nombre, teléfono o dirección: permiten falsear lo que se ve en pantalla,
-// boletas y CSV (p. ej. invertir el texto con U+202E).
-const CONTROL_OR_FORMAT = /[\p{Cc}\p{Cf}]/u
-const NO_CONTROL_MESSAGE = 'No uses caracteres invisibles o de control'
-const noControl = (v: string) => !CONTROL_OR_FORMAT.test(v)
 
 /** Texto opcional: vacío o ausente = null. */
 const optionalText = (max: number, label: string) =>

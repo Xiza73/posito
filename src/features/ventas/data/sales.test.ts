@@ -6,6 +6,7 @@ import { migrate } from 'drizzle-orm/pglite/migrator'
 import { beforeAll, describe, expect, it } from 'vitest'
 import * as schema from '@/db/schema'
 import type { PaymentMethod } from '@/lib/payment'
+import { updateBusinessProfile } from '@/lib/settings'
 import { PAGE_SIZE, type SalesFilters } from '../lib/filters'
 import {
   approveSale,
@@ -908,5 +909,52 @@ describe('getSale: cliente', () => {
     expect((await getSale(db, { orgId: ORG_A, viewer: ana, id }))?.customer?.name).toBe(
       'Juan Pérez',
     )
+  })
+})
+
+describe('getSale: datos del negocio', () => {
+  const input = (tradeName: string) => ({
+    tradeName,
+    legalName: null,
+    ruc: null,
+    address: null,
+    phone: null,
+    branchName: null,
+    receiptFooter: null,
+  })
+
+  it('lee el snapshot de la venta y no el perfil vigente', async () => {
+    const id = await insertSale()
+    await db
+      .update(schema.sale)
+      .set({
+        businessSnapshot: {
+          version: 1,
+          tradeName: 'Nombre Antiguo',
+          legalName: 'Antiguo S.A.C.',
+          ruc: '20100047218',
+          address: null,
+          phone: null,
+          branchName: null,
+          receiptFooter: 'Hasta pronto',
+        },
+      })
+      .where(eq(schema.sale.id, id))
+    await updateBusinessProfile(db, { orgId: ORG_A, input: input('Nombre Nuevo') })
+
+    const detail = await getSale(db, { orgId: ORG_A, viewer: admin, id })
+    expect(detail?.business).toMatchObject({
+      tradeName: 'Nombre Antiguo',
+      ruc: '20100047218',
+      receiptFooter: 'Hasta pronto',
+    })
+  })
+
+  it('sin snapshot cae al perfil vigente', async () => {
+    const id = await insertSale()
+    await updateBusinessProfile(db, { orgId: ORG_A, input: input('Perfil Vigente') })
+    const detail = await getSale(db, { orgId: ORG_A, viewer: admin, id })
+    expect(detail?.business.tradeName).toBe('Perfil Vigente')
+    expect(detail?.business.receiptFooter).toBe('Gracias por su compra')
   })
 })

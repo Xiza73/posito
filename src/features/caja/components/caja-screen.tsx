@@ -23,13 +23,11 @@ type Props = {
   products: CatalogProduct[]
   /** Categorías con al menos un producto activo (los chips agregan "Todos"). */
   categories: string[]
-  /** Nombre de la bodega, para el encabezado de la boleta. */
-  businessName: string
   /** `customer:create`: habilita el alta rápida de clientes en el selector. */
   canCreateCustomer: boolean
 }
 
-export function CajaScreen({ products, categories, businessName, canCreateCustomer }: Props) {
+export function CajaScreen({ products, categories, canCreateCustomer }: Props) {
   const [query, setQuery] = useState('')
   const [category, setCategory] = useState<string | null>(null)
   const [cart, setCart] = useState<Cart>({})
@@ -190,12 +188,7 @@ export function CajaScreen({ products, categories, businessName, canCreateCustom
           }}
         />
       ) : null}
-      <ReceiptDialog
-        sale={receipt}
-        businessName={businessName}
-        closeLabel="Nueva venta"
-        onClose={() => setReceipt(null)}
-      />
+      <ReceiptDialog sale={receipt} closeLabel="Nueva venta" onClose={() => setReceipt(null)} />
     </>
   )
 }

@@ -6,6 +6,7 @@ import { migrate } from 'drizzle-orm/pglite/migrator'
 import { beforeAll, describe, expect, it } from 'vitest'
 import * as schema from '@/db/schema'
 import { PAYMENT_METHODS } from '@/lib/payment'
+import { updateBusinessProfile } from '@/lib/settings'
 import { CheckoutError, checkout, InsufficientStockError } from './checkout'
 
 // Migraciones reales sobre Postgres en memoria (PGlite), igual que src/db/schema.test.ts.
@@ -543,5 +544,75 @@ describe('checkout: cliente', () => {
     await sell([{ productId: id, quantity: 1 }], { saleId, customerId })
     const again = await sell([{ productId: id, quantity: 1 }], { saleId })
     expect(again.customer?.id).toBe(customerId)
+  })
+})
+
+describe('checkout: datos del negocio (snapshot)', () => {
+  const profile = (over: Partial<Parameters<typeof updateBusinessProfile>[1]['input']> = {}) =>
+    updateBusinessProfile(db, {
+      orgId: ORG_B,
+      input: {
+        tradeName: 'Bodega Nueva',
+        legalName: 'Nueva S.A.C.',
+        ruc: '20100047218',
+        address: 'Av. Lima 123',
+        phone: null,
+        branchName: null,
+        receiptFooter: null,
+        ...over,
+      },
+    })
+  const sellB = (productId: string, over: Partial<Parameters<typeof checkout>[1]> = {}) =>
+    sell([{ productId, quantity: 1 }], { orgId: ORG_B, ...over })
+
+  it('sin perfil guardado usa el nombre de la organization y el pie por defecto', async () => {
+    const id = await newProduct({}, ORG_B)
+    const s = await sellB(id)
+    expect(s.business).toEqual({
+      version: 1,
+      tradeName: 'Bodega B',
+      legalName: null,
+      ruc: null,
+      address: null,
+      phone: null,
+      branchName: null,
+      receiptFooter: 'Gracias por su compra',
+    })
+  })
+
+  it('guarda el snapshot y cambiar el perfil después NO altera la venta ni su reintento', async () => {
+    await profile()
+    const id = await newProduct({}, ORG_B)
+    const saleId = uuid()
+    const a = await sellB(id, { saleId })
+    expect(a.business).toMatchObject({ tradeName: 'Bodega Nueva', ruc: '20100047218' })
+
+    await profile({ tradeName: 'Otro Nombre', ruc: null, legalName: null, address: null })
+
+    const retry = await sellB(id, { saleId })
+    expect(retry.business).toEqual(a.business)
+    const [row] = await db.select().from(schema.sale).where(eq(schema.sale.id, saleId))
+    expect(row.businessSnapshot).toMatchObject({ version: 1, tradeName: 'Bodega Nueva' })
+
+    // Una venta nueva ya usa el perfil vigente
+    const fresh = await sellB(id)
+    expect(fresh.business).toMatchObject({ tradeName: 'Otro Nombre', ruc: null })
+  })
+
+  it('una venta sin snapshot (anterior a la función) cae al perfil vigente', async () => {
+    await profile({ tradeName: 'Vigente SAC', legalName: null, ruc: null, address: null })
+    const id = await newProduct({}, ORG_B)
+    const saleId = uuid()
+    await sellB(id, { saleId })
+    await db.update(schema.sale).set({ businessSnapshot: null }).where(eq(schema.sale.id, saleId))
+    const retry = await sellB(id, { saleId })
+    expect(retry.business.tradeName).toBe('Vigente SAC')
+
+    // jsonb de forma inválida: mismo respaldo
+    await db
+      .update(schema.sale)
+      .set({ businessSnapshot: { version: 2, foo: 'bar' } })
+      .where(eq(schema.sale.id, saleId))
+    expect((await sellB(id, { saleId })).business.tradeName).toBe('Vigente SAC')
   })
 })

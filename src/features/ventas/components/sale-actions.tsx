@@ -8,7 +8,6 @@ import { VoidSaleDialog } from './void-sale-dialog'
 
 type Props = {
   sale: SaleSummary
-  businessName: string
   /** Puede anular: permiso `sale:void`, venta completada y dentro de la ventana (calculado en el servidor). */
   canVoid: boolean
   /** Venta pendiente y permiso `sale:approve`. */
@@ -18,7 +17,7 @@ type Props = {
 }
 
 /** Botones del detalle: ver/reimprimir ticket, aprobar/rechazar (pendientes) y anular. */
-export function SaleActions({ sale, businessName, canVoid, canApprove, canReject }: Props) {
+export function SaleActions({ sale, canVoid, canApprove, canReject }: Props) {
   const [showReceipt, setShowReceipt] = useState(false)
   const [showVoid, setShowVoid] = useState(false)
   const [showApprove, setShowApprove] = useState(false)
@@ -54,11 +53,7 @@ export function SaleActions({ sale, businessName, canVoid, canApprove, canReject
         ) : null}
       </div>
 
-      <ReceiptDialog
-        sale={showReceipt ? sale : null}
-        businessName={businessName}
-        onClose={() => setShowReceipt(false)}
-      />
+      <ReceiptDialog sale={showReceipt ? sale : null} onClose={() => setShowReceipt(false)} />
       {canCancel ? (
         <VoidSaleDialog
           open={showVoid}
