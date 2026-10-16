@@ -1,6 +1,7 @@
 import { formatLimaDateTime } from '@/lib/lima-time'
 import { PAYMENT_LABELS, type PaymentMethod } from '@/lib/payment'
 import { formatReceiptNumber } from '@/lib/receipt'
+import type { SaleStatus } from '@/lib/receipt-lines'
 
 /** Fila de exportación: una venta con sus líneas (serializable, sin Date). */
 export type ExportRow = {
@@ -10,7 +11,7 @@ export type ExportRow = {
   createdAt: string
   cashierName: string | null
   paymentMethod: PaymentMethod
-  status: 'completada' | 'anulada'
+  status: SaleStatus
   subtotalCents: number
   igvCents: number
   totalCents: number
@@ -53,7 +54,11 @@ export function csvCell(value: string): string {
   return /[",\r\n]/.test(safe) ? `"${safe.replaceAll('"', '""')}"` : safe
 }
 
-const STATUS_LABELS = { completada: 'Completada', anulada: 'Anulada' } as const
+const STATUS_LABELS = {
+  completada: 'Completada',
+  anulada: 'Anulada',
+  pendiente: 'Por validar',
+} as const satisfies Record<SaleStatus, string>
 
 function rowCells(r: ExportRow): string[] {
   return [

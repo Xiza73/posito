@@ -10,7 +10,7 @@ export const VOID_WINDOW_DAYS = 7
 /** Rango máximo de fechas consultable. */
 export const MAX_RANGE_DAYS = 366
 
-export const SALE_STATUSES = ['completada', 'anulada'] as const
+export const SALE_STATUSES = ['completada', 'anulada', 'pendiente'] as const
 
 export type SalesFilters = {
   /** `YYYY-MM-DD` en hora de Lima, inclusive. */

@@ -123,6 +123,7 @@ export function SalesFilters({ filters, today, products, cashiers, onChange, onC
           <option value="">Todos los estados</option>
           <option value="completada">Completadas</option>
           <option value="anulada">Anuladas</option>
+          <option value="pendiente">Por validar</option>
         </select>
 
         {cashiers ? (

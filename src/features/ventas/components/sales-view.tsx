@@ -51,7 +51,7 @@ export function SalesView({
     startTransition(() => router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false }))
   }
 
-  const matching = summary.count + summary.voidedCount
+  const matching = summary.count + summary.voidedCount + summary.pendingCount
   const exportHref = `/ventas/export?${salesQueryString(filters)}`
 
   return (

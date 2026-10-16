@@ -8,6 +8,8 @@ import * as schema from '@/db/schema'
 import type { PaymentMethod } from '@/lib/payment'
 import { PAGE_SIZE, type SalesFilters } from '../lib/filters'
 import {
+  approveSale,
+  countPendingSales,
   exportRows,
   getSale,
   listCashiers,
@@ -69,6 +71,8 @@ type Fixture = {
   items?: { productId: string; qty: number; unitPriceCents?: number; name?: string }[]
   /** Inserta los movimientos 'venta' (lo normal). */
   movements?: boolean
+  /** 'pendiente' = esperando validación (descuenta stock igual). */
+  status?: 'completada' | 'pendiente'
 }
 
 /** Inserta una venta completada como la dejaría el cobro (sin pasar por caja: features aisladas). */
@@ -90,6 +94,7 @@ async function insertSale(f: Fixture = {}): Promise<string> {
     series: 'B001',
     number: ++seq,
     cashierId,
+    status: f.status ?? 'completada',
     paymentMethod: f.method ?? 'efectivo',
     subtotalCents: total - igv,
     igvCents: igv,
@@ -376,7 +381,32 @@ describe('salesSummary', () => {
       totalCents: 3000,
       byMethod: { efectivo: 900, yape_plin: 900, tarjeta: 1200 },
       voidedCount: 1,
+      pendingCount: 0,
+      pendingTotalCents: 0,
     })
+  })
+
+  it('las pendientes no suman importes y se cuentan aparte', async () => {
+    const day = '2026-04-04'
+    const p = await newProduct({ stock: 1000 })
+    await insertSale({ createdAt: at(`${day}T09:00:00`), items: [{ productId: p, qty: 1 }] }) // 300
+    await insertSale({
+      createdAt: at(`${day}T10:00:00`),
+      status: 'pendiente',
+      method: 'yape_plin',
+      items: [{ productId: p, qty: 5 }],
+    })
+    const s = await salesSummary(db, scope(range(day)))
+    expect(s).toEqual({
+      count: 1,
+      totalCents: 300,
+      byMethod: { efectivo: 300, yape_plin: 0, tarjeta: 0 },
+      voidedCount: 0,
+      pendingCount: 1,
+      pendingTotalCents: 1500,
+    })
+    const only = await salesSummary(db, scope({ ...range(day), status: 'pendiente' }))
+    expect(only).toMatchObject({ count: 0, totalCents: 0, pendingCount: 1 })
   })
 
   it('sin ventas devuelve ceros', async () => {
@@ -385,6 +415,8 @@ describe('salesSummary', () => {
       totalCents: 0,
       byMethod: { efectivo: 0, yape_plin: 0, tarjeta: 0 },
       voidedCount: 0,
+      pendingCount: 0,
+      pendingTotalCents: 0,
     })
   })
 
@@ -620,6 +652,156 @@ describe('voidSale', () => {
     expect((await db.select().from(schema.sale).where(eq(schema.sale.id, id)))[0].status).toBe(
       'anulada',
     )
+  })
+})
+
+describe('ventas pendientes de validación', () => {
+  it('aprobar: pasa a completada, registra quién y cuándo, y NO toca el stock', async () => {
+    const p = await newProduct({ stock: 10 })
+    const id = await insertSale({ status: 'pendiente', items: [{ productId: p, qty: 4 }] })
+    const mvBefore = await db
+      .select()
+      .from(schema.stockMovement)
+      .where(eq(schema.stockMovement.saleId, id))
+
+    await approveSale(db, { orgId: ORG_A, userId: ROOT, id })
+
+    const [s] = await db.select().from(schema.sale).where(eq(schema.sale.id, id))
+    expect(s.status).toBe('completada')
+    expect(s.approvedById).toBe(ROOT)
+    expect(s.approvedAt).toBeInstanceOf(Date)
+    expect(await stockOf(p)).toBe(10) // el fixture no descuenta; aprobar tampoco debe moverlo
+    const mvAfter = await db
+      .select()
+      .from(schema.stockMovement)
+      .where(eq(schema.stockMovement.saleId, id))
+    expect(mvAfter).toHaveLength(mvBefore.length)
+
+    const detail = await getSale(db, { orgId: ORG_A, viewer: admin, id })
+    expect(detail).toMatchObject({ status: 'completada', approvedByName: 'Rosa Admin' })
+    expect(detail?.approvedAt).toEqual(expect.any(String))
+  })
+
+  it('aprobar dos veces o una venta ya procesada da "La venta ya fue procesada"', async () => {
+    const p = await newProduct({ stock: 10 })
+    const pending = await insertSale({ status: 'pendiente', items: [{ productId: p, qty: 1 }] })
+    await approveSale(db, { orgId: ORG_A, userId: ROOT, id: pending })
+    const again = await approveSale(db, { orgId: ORG_A, userId: ROOT, id: pending }).catch((e) => e)
+    expect(again).toBeInstanceOf(SaleError)
+    expect(again.message).toBe('La venta ya fue procesada')
+
+    const done = await insertSale({ items: [{ productId: p, qty: 1 }] })
+    const err = await approveSale(db, { orgId: ORG_A, userId: ROOT, id: done }).catch((e) => e)
+    expect(err.message).toBe('La venta ya fue procesada')
+
+    const voided = await insertSale({ items: [{ productId: p, qty: 1 }] })
+    await markVoided(voided)
+    const err2 = await approveSale(db, { orgId: ORG_A, userId: ROOT, id: voided }).catch((e) => e)
+    expect(err2.message).toBe('La venta ya fue procesada')
+  })
+
+  it('nadie aprueba sus propias ventas (separación de funciones)', async () => {
+    const p = await newProduct({ stock: 10 })
+    const own = await insertSale({
+      status: 'pendiente',
+      cashierId: ROOT,
+      items: [{ productId: p, qty: 1 }],
+    })
+    const err = await approveSale(db, { orgId: ORG_A, userId: ROOT, id: own }).catch((e) => e)
+    expect(err).toBeInstanceOf(SaleError)
+    expect(err.message).toBe('No puedes aprobar tus propias ventas')
+    const [s] = await db.select().from(schema.sale).where(eq(schema.sale.id, own))
+    expect(s.status).toBe('pendiente')
+  })
+
+  it('rechazar aborta si la venta ya no está pendiente (otro admin la aprobó)', async () => {
+    const p = await newProduct({ stock: 10 })
+    const id = await insertSale({ status: 'pendiente', items: [{ productId: p, qty: 1 }] })
+    await approveSale(db, { orgId: ORG_A, userId: ROOT, id })
+    const err = await voidSale(db, {
+      orgId: ORG_A,
+      userId: ROOT,
+      id,
+      reason: 'Error de cobro',
+      expectedStatus: 'pendiente',
+    }).catch((e) => e)
+    expect(err).toBeInstanceOf(SaleError)
+    expect(err.message).toMatch(/cambió de estado/)
+    const [s] = await db.select().from(schema.sale).where(eq(schema.sale.id, id))
+    expect(s.status).toBe('completada')
+  })
+
+  it('aprobar una venta de otra bodega es "no encontrada" y no la toca', async () => {
+    const pB = await newProduct({ stock: 5 }, ORG_B)
+    const idB = await insertSale({
+      orgId: ORG_B,
+      status: 'pendiente',
+      items: [{ productId: pB, qty: 1 }],
+    })
+    const err = await approveSale(db, { orgId: ORG_A, userId: ROOT, id: idB }).catch((e) => e)
+    expect(err).toBeInstanceOf(SaleNotFoundError)
+    const [s] = await db.select().from(schema.sale).where(eq(schema.sale.id, idB))
+    expect(s.status).toBe('pendiente')
+  })
+
+  it('rechazar (anular) una pendiente devuelve el stock y NO tiene ventana de 7 días', async () => {
+    const p = await newProduct({ stock: 6 })
+    const id = await insertSale({
+      status: 'pendiente',
+      createdAt: new Date(Date.now() - 30 * DAY),
+      items: [{ productId: p, qty: 2 }],
+    })
+    await voidSale(db, { orgId: ORG_A, userId: ROOT, id, reason: 'Producto equivocado' })
+
+    const [s] = await db.select().from(schema.sale).where(eq(schema.sale.id, id))
+    expect(s.status).toBe('anulada')
+    expect(s.voidReason).toBe('Producto equivocado')
+    expect(s.approvedAt).toBeNull()
+    expect(await stockOf(p)).toBe(8)
+  })
+
+  it('una completada de hace 30 días sigue fuera de la ventana', async () => {
+    const p = await newProduct({ stock: 6 })
+    const id = await insertSale({
+      createdAt: new Date(Date.now() - 30 * DAY),
+      items: [{ productId: p, qty: 2 }],
+    })
+    const err = await voidSale(db, { orgId: ORG_A, userId: ROOT, id, reason: 'x' }).catch((e) => e)
+    expect(err).toBeInstanceOf(SaleError)
+  })
+
+  it('no se puede aprobar una venta ya rechazada', async () => {
+    const p = await newProduct({ stock: 6 })
+    const id = await insertSale({ status: 'pendiente', items: [{ productId: p, qty: 1 }] })
+    await voidSale(db, { orgId: ORG_A, userId: ROOT, id, reason: 'Error de cobro' })
+    const err = await approveSale(db, { orgId: ORG_A, userId: ROOT, id }).catch((e) => e)
+    expect(err.message).toBe('La venta ya fue procesada')
+  })
+
+  it('el cajero ve sus pendientes (estado "pendiente") y no las ajenas', async () => {
+    const day = '2026-05-20'
+    const own = await insertSale({
+      cashierId: ANA,
+      status: 'pendiente',
+      createdAt: at(`${day}T10:00:00`),
+    })
+    await insertSale({ cashierId: LUIS, status: 'pendiente', createdAt: at(`${day}T11:00:00`) })
+    const { rows } = await listSales(db, scope({ ...range(day), status: 'pendiente' }, ana))
+    expect(rows.map((r) => [r.id, r.status])).toEqual([[own, 'pendiente']])
+    expect(await getSale(db, { orgId: ORG_A, viewer: ana, id: own })).toMatchObject({
+      status: 'pendiente',
+    })
+  })
+
+  it('countPendingSales cuenta solo las pendientes de la bodega', async () => {
+    const before = await countPendingSales(db, ORG_A)
+    const beforeB = await countPendingSales(db, ORG_B)
+    await insertSale({ status: 'pendiente' })
+    await insertSale({ status: 'pendiente' })
+    await insertSale({}) // completada
+    await insertSale({ orgId: ORG_B, status: 'pendiente' })
+    expect(await countPendingSales(db, ORG_A)).toBe(before + 2)
+    expect(await countPendingSales(db, ORG_B)).toBe(beforeB + 1)
   })
 })
 

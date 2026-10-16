@@ -22,6 +22,7 @@ export const voidInputSchema = z
     id: z.uuid(),
     reasonCode: z.enum(VOID_REASON_CODES, { error: 'Elige un motivo' }),
     otherText: z.string().trim().default(''),
+    expectedStatus: z.enum(['pendiente', 'completada']).optional(),
   })
   .superRefine((v, ctx) => {
     if (v.reasonCode !== 'otro') return
@@ -33,8 +34,9 @@ export const voidInputSchema = z
       })
     }
   })
-  .transform(({ id, reasonCode, otherText }) => ({
+  .transform(({ id, reasonCode, otherText, expectedStatus }) => ({
     id,
+    expectedStatus,
     reason: reasonCode === 'otro' ? `Otro: ${otherText}` : VOID_REASONS[reasonCode],
   }))
 

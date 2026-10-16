@@ -54,6 +54,7 @@ const sell = (
     userId: USER,
     saleId: uuid(),
     paymentMethod: 'efectivo',
+    requireApproval: false,
     items,
     ...over,
   })
@@ -122,6 +123,60 @@ describe('checkout: camino feliz', () => {
     expect(row.totalCents).toBe(861)
     expect(row.customerId).toBeNull()
     expect(row.status).toBe('completada')
+  })
+})
+
+describe('checkout: validación de ventas (requireApproval)', () => {
+  it('con requireApproval la venta queda pendiente, pero descuenta stock y toma correlativo', async () => {
+    const id = await newProduct({ stock: 10 })
+    const before = await db.select().from(schema.receiptSeries)
+    const s = await sell([{ productId: id, quantity: 3 }], { requireApproval: true })
+
+    expect(s.status).toBe('pendiente')
+    expect(s.number).toBeGreaterThan(0)
+    expect(await stockOf(id)).toBe(7)
+    const mv = await db
+      .select()
+      .from(schema.stockMovement)
+      .where(eq(schema.stockMovement.saleId, s.id))
+    expect(mv).toHaveLength(1)
+    expect(mv[0]).toMatchObject({ type: 'venta', quantity: -3 })
+    const [row] = await db.select().from(schema.sale).where(eq(schema.sale.id, s.id))
+    expect(row.status).toBe('pendiente')
+    expect(row.approvedAt).toBeNull()
+    expect(row.approvedById).toBeNull()
+    const after = await db.select().from(schema.receiptSeries)
+    expect(after[0].lastNumber).toBe((before[0]?.lastNumber ?? 0) + 1)
+  })
+
+  it('sin requireApproval queda completada', async () => {
+    const id = await newProduct({ stock: 5 })
+    const s = await sell([{ productId: id, quantity: 1 }], { requireApproval: false })
+    expect(s.status).toBe('completada')
+  })
+
+  it('reintentar una pendiente devuelve la venta con su estado ACTUAL (ya aprobada)', async () => {
+    const id = await newProduct({ stock: 10 })
+    const saleId = uuid()
+    const a = await sell([{ productId: id, quantity: 2 }], { saleId, requireApproval: true })
+    expect(a.status).toBe('pendiente')
+
+    await db
+      .update(schema.sale)
+      .set({ status: 'completada', approvedAt: new Date(), approvedById: USER })
+      .where(eq(schema.sale.id, saleId))
+
+    const b = await sell([{ productId: id, quantity: 2 }], { saleId, requireApproval: true })
+    expect(b.status).toBe('completada')
+    expect(await stockOf(id)).toBe(8)
+  })
+
+  it('la DB exige aprobación completa: approvedAt sin approvedById se rechaza', async () => {
+    const id = await newProduct({ stock: 10 })
+    const s = await sell([{ productId: id, quantity: 1 }])
+    await expect(
+      db.update(schema.sale).set({ approvedAt: new Date() }).where(eq(schema.sale.id, s.id)),
+    ).rejects.toThrow()
   })
 })
 

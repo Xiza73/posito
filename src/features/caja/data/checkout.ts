@@ -51,6 +51,12 @@ export type CheckoutParams = {
   /** Generado por el cliente: es la PK de la venta y la clave de idempotencia. */
   saleId: string
   paymentMethod: PaymentMethod
+  /**
+   * La venta queda 'pendiente' de validación. La decide la ACTION (ajuste de la bodega + rol
+   * cajero), nunca el cliente. Una pendiente descuenta stock y toma correlativo igual que una
+   * completada: el cliente se lleva la mercadería; rechazarla = anularla.
+   */
+  requireApproval: boolean
   /** Solo producto y cantidad: los precios SIEMPRE se leen de la DB. */
   items: { productId: string; quantity: number }[]
 }
@@ -71,7 +77,8 @@ function mergeItems(items: CheckoutParams['items']): Map<string, number> {
 
 /**
  * Cobra una venta en UNA transacción: correlativo, venta, líneas, movimientos de stock y caché
- * `product.stock`. Es idempotente por `saleId`: reintentar devuelve la misma venta sin tocar stock.
+ * `product.stock`. Es idempotente por `saleId`: reintentar devuelve la misma venta (con su estado
+ * ACTUAL, p. ej. ya aprobada) sin tocar stock.
  *
  * Concurrencia (PGlite es una sola conexión y no puede probarla; las garantías son estas):
  *  - `SELECT … FOR UPDATE` sobre los productos: dos cobros del mismo producto se serializan, así
@@ -82,7 +89,7 @@ function mergeItems(items: CheckoutParams['items']): Map<string, number> {
  *  - El índice único (org, serie, número) es la red de seguridad final.
  */
 export async function checkout(db: Db, params: CheckoutParams): Promise<SaleSummary> {
-  const { orgId, userId, saleId, paymentMethod } = params
+  const { orgId, userId, saleId, paymentMethod, requireApproval } = params
   const merged = mergeItems(params.items)
 
   try {
@@ -147,7 +154,7 @@ export async function checkout(db: Db, params: CheckoutParams): Promise<SaleSumm
         subtotalCents: totals.subtotal,
         igvCents: totals.igv,
         totalCents: totals.total,
-        status: 'completada',
+        status: requireApproval ? 'pendiente' : 'completada',
       })
 
       await tx.insert(saleItem).values(

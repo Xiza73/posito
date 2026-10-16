@@ -1,6 +1,7 @@
 'use client'
 
 import { useActionState, useEffect, useRef, useState } from 'react'
+import { notifyPendingChanged } from '@/components/shell/pending-badge'
 import { SubmitButton } from '@/components/ui/submit-button'
 import { formatReceiptNumber } from '@/lib/receipt'
 import { type VoidFormState, voidSaleAction } from '../actions'
@@ -12,10 +13,27 @@ type Props = {
   open: boolean
   onClose: () => void
   sale: { id: string; series: string; number: number }
+  /** 'reject' = rechazar una venta pendiente de validación (misma anulación, otros textos). */
+  mode?: 'void' | 'reject'
 }
 
-/** Diálogo nativo para anular una venta: motivo obligatorio y aviso de que el stock vuelve. */
-export function VoidSaleDialog({ open, onClose, sale }: Props) {
+const COPY = {
+  void: {
+    title: 'Anular venta',
+    body: 'Los productos de esta venta volverán al inventario y la venta dejará de contar en los totales. Esta acción no se puede deshacer.',
+    legend: 'Motivo de la anulación',
+    pending: 'Anulando…',
+  },
+  reject: {
+    title: 'Rechazar venta',
+    body: 'Los productos de esta venta volverán al inventario y quedará anulada. Esta acción no se puede deshacer.',
+    legend: 'Motivo del rechazo',
+    pending: 'Rechazando…',
+  },
+} as const
+
+/** Diálogo nativo para anular (o rechazar) una venta: motivo obligatorio y aviso de que el stock vuelve. */
+export function VoidSaleDialog({ open, onClose, sale, mode = 'void' }: Props) {
   const ref = useRef<HTMLDialogElement>(null)
 
   useEffect(() => {
@@ -33,17 +51,29 @@ export function VoidSaleDialog({ open, onClose, sale }: Props) {
       className="m-auto max-h-[92vh] w-[min(94vw,28rem)] overflow-auto rounded-card border border-line bg-surface p-6 text-ink shadow-pop backdrop:bg-black/40"
     >
       {/* Se monta solo abierto: cada apertura empieza con un formulario limpio */}
-      {open ? <VoidForm sale={sale} onClose={onClose} /> : null}
+      {open ? <VoidForm sale={sale} onClose={onClose} mode={mode} /> : null}
     </dialog>
   )
 }
 
-function VoidForm({ sale, onClose }: { sale: Props['sale']; onClose: () => void }) {
+function VoidForm({
+  sale,
+  onClose,
+  mode,
+}: {
+  sale: Props['sale']
+  onClose: () => void
+  mode: NonNullable<Props['mode']>
+}) {
+  const copy = COPY[mode]
   const [code, setCode] = useState<string>('')
 
   async function submit(prev: VoidFormState, formData: FormData) {
     const result = await voidSaleAction(prev, formData)
-    if (result.ok) onClose()
+    if (result.ok) {
+      notifyPendingChanged()
+      onClose()
+    }
     return result
   }
   const [state, action] = useActionState(submit, INITIAL)
@@ -52,18 +82,21 @@ function VoidForm({ sale, onClose }: { sale: Props['sale']; onClose: () => void 
   return (
     <>
       <h2 id="void-dialog-title" className="mb-2 font-semibold text-lg">
-        Anular venta {formatReceiptNumber(sale.series, sale.number)}
+        {copy.title} {formatReceiptNumber(sale.series, sale.number)}
       </h2>
-      <p className="mb-4 text-muted text-sm">
-        Los productos de esta venta volverán al inventario y la venta dejará de contar en los
-        totales. Esta acción no se puede deshacer.
-      </p>
+      <p className="mb-4 text-muted text-sm">{copy.body}</p>
 
       <form action={action} className="flex flex-col gap-3.5">
         <input type="hidden" name="id" value={sale.id} />
+        {/* Rechazar exige que siga pendiente; anular, que siga completada */}
+        <input
+          type="hidden"
+          name="expectedStatus"
+          value={mode === 'reject' ? 'pendiente' : 'completada'}
+        />
 
         <fieldset className="flex flex-col gap-2">
-          <legend className="mb-1 font-medium text-sm">Motivo de la anulación</legend>
+          <legend className="mb-1 font-medium text-sm">{copy.legend}</legend>
           {VOID_REASON_CODES.map((c) => (
             <label key={c} className="flex items-center gap-2.5 text-sm">
               <input
@@ -114,10 +147,10 @@ function VoidForm({ sale, onClose }: { sale: Props['sale']; onClose: () => void 
             Cancelar
           </button>
           <SubmitButton
-            pendingLabel="Anulando…"
+            pendingLabel={copy.pending}
             className="h-10 rounded-ctl bg-bad px-4 font-semibold text-sm text-white"
           >
-            Anular venta
+            {copy.title}
           </SubmitButton>
         </div>
       </form>

@@ -6,6 +6,7 @@ describe('roles', () => {
     expect(roles.cajero.authorize({ product: ['create'] }).success).toBe(false)
     expect(roles.cajero.authorize({ stock: ['adjust'] }).success).toBe(false)
     expect(roles.cajero.authorize({ sale: ['void'] }).success).toBe(false)
+    expect(roles.cajero.authorize({ sale: ['approve'] }).success).toBe(false)
     expect(roles.cajero.authorize({ report: ['view'] }).success).toBe(false)
   })
 
@@ -17,6 +18,7 @@ describe('roles', () => {
   it('admin tiene permisos de negocio y gestiona miembros', () => {
     expect(roles.admin.authorize({ product: ['create', 'update', 'delete'] }).success).toBe(true)
     expect(roles.admin.authorize({ sale: ['void'] }).success).toBe(true)
+    expect(roles.admin.authorize({ sale: ['approve'] }).success).toBe(true)
     expect(roles.admin.authorize({ stock: ['adjust'] }).success).toBe(true)
     expect(roles.admin.authorize({ member: ['create'] }).success).toBe(true)
   })
@@ -24,6 +26,7 @@ describe('roles', () => {
   it('owner tiene todo, incluso eliminar la organization', () => {
     expect(roles.owner.authorize({ organization: ['delete'] }).success).toBe(true)
     expect(roles.owner.authorize({ report: ['view'] }).success).toBe(true)
+    expect(roles.owner.authorize({ sale: ['approve'] }).success).toBe(true)
   })
 
   it('solo owner y admin pueden actualizar la organization (Configuración); cajero no', () => {

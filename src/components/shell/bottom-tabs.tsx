@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { Icon } from '@/components/ui/icon'
 import { isActive, MORE_ITEMS, TAB_ITEMS } from './nav-items'
+import { PendingBadge } from './pending-badge'
 
 const moreHrefs = MORE_ITEMS.map((m) => m.href)
 
@@ -27,7 +28,10 @@ export function BottomTabs() {
               active ? 'text-accent' : 'text-muted'
             }`}
           >
-            <Icon d={t.icon} size={20} />
+            <span className="relative">
+              <Icon d={t.icon} size={20} />
+              {t.pending ? <PendingBadge /> : null}
+            </span>
             {t.label}
           </Link>
         )

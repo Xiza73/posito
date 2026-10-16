@@ -49,11 +49,18 @@ export type SalesSummary = {
   totalCents: number
   byMethod: Record<PaymentMethod, number>
   voidedCount: number
+  /** Ventas por validar del rango: no suman en los importes hasta que se aprueben. */
+  pendingCount: number
+  /** Su importe: el dinero ya está en caja, se muestra aparte para que el arqueo cuadre. */
+  pendingTotalCents: number
 }
 
 export type SaleDetail = SaleSummary & {
   cashierId: string
   voidedByName: string | null
+  /** ISO 8601; solo si la venta pasó por validación y se aprobó. */
+  approvedAt: string | null
+  approvedByName: string | null
   /** Dentro de la ventana de anulación, calculado por la DB (mismo criterio que `voidSale`). */
   withinVoidWindow: boolean
 }
@@ -142,7 +149,10 @@ export async function listSales(
   }
 }
 
-/** Totales del rango: importes solo de ventas completadas; las anuladas se cuentan aparte. */
+/**
+ * Totales del rango: importes solo de ventas completadas; anuladas y por validar se cuentan aparte
+ * (una pendiente todavía no es ingreso confirmado).
+ */
 export async function salesSummary(db: Db, scope: SalesScope): Promise<SalesSummary> {
   const done = sql`${sale.status} = 'completada'`
   const num = (expr: SQL) => sql<number>`${expr}`.mapWith(Number)
@@ -160,6 +170,10 @@ export async function salesSummary(db: Db, scope: SalesScope): Promise<SalesSumm
         sql`coalesce(sum(${sale.totalCents}) filter (where ${done} and ${sale.paymentMethod} = 'tarjeta'), 0)`,
       ),
       voidedCount: num(sql`count(*) filter (where ${sale.status} = 'anulada')`),
+      pendingCount: num(sql`count(*) filter (where ${sale.status} = 'pendiente')`),
+      pendingTotalCents: num(
+        sql`coalesce(sum(${sale.totalCents}) filter (where ${sale.status} = 'pendiente'), 0)`,
+      ),
     })
     .from(sale)
     .where(whereOf(scope))
@@ -169,6 +183,8 @@ export async function salesSummary(db: Db, scope: SalesScope): Promise<SalesSumm
     totalCents: r.totalCents,
     byMethod: { efectivo: r.efectivo, yape_plin: r.yape_plin, tarjeta: r.tarjeta },
     voidedCount: r.voidedCount,
+    pendingCount: r.pendingCount,
+    pendingTotalCents: r.pendingTotalCents,
   }
 }
 
@@ -178,6 +194,7 @@ export async function getSale(
   { orgId, viewer, id }: { orgId: string; viewer: Viewer; id: string },
 ): Promise<SaleDetail | null> {
   const voider = alias(user, 'voider')
+  const approver = alias(user, 'approver')
   const [row] = await db
     .select({
       id: sale.id,
@@ -194,11 +211,14 @@ export async function getSale(
       cashierId: sale.cashierId,
       cashierName: user.name,
       voidedByName: voider.name,
+      approvedAt: sale.approvedAt,
+      approvedByName: approver.name,
       withinVoidWindow: sql<boolean>`${sale.createdAt} >= now() - ${windowInterval()}`,
     })
     .from(sale)
     .leftJoin(user, eq(user.id, sale.cashierId))
     .leftJoin(voider, eq(voider.id, sale.voidedById))
+    .leftJoin(approver, eq(approver.id, sale.approvedById))
     .where(and(eq(sale.id, id), eq(sale.organizationId, orgId)))
     .limit(1)
   if (!row) return null
@@ -231,6 +251,8 @@ export async function getSale(
     voidReason: row.voidReason,
     cashierId: row.cashierId,
     voidedByName: row.voidedByName,
+    approvedAt: row.approvedAt?.toISOString() ?? null,
+    approvedByName: row.approvedByName,
     withinVoidWindow: row.withinVoidWindow,
   }
 }
@@ -242,9 +264,12 @@ function windowInterval(): SQL {
 
 /**
  * Anula una venta en UNA transacción: estado + movimientos inversos + caché de stock.
+ * También es "rechazar" una venta pendiente de validación (misma lógica: devuelve el stock).
  *
  * - `SELECT … FOR UPDATE` de la venta (acotada por bodega): dos anulaciones simultáneas se
- *   serializan y la segunda ve `anulada`. La ventana de 7 días se compara en SQL con `now()`.
+ *   serializan y la segunda ve `anulada`. La ventana de 7 días se compara en SQL con `now()` y
+ *   aplica SOLO a las completadas: una pendiente se puede rechazar sin importar su antigüedad
+ *   (el admin puede tardar en validar y el cliente ya se llevó la mercadería).
  * - El stock se devuelve a partir de los movimientos 'venta' ORIGINALES de esa venta, NO de
  *   `product.tracksStock` actual: si el producto cambió de "controla stock" después de vender, lo
  *   que se descontó (o no) en su momento es lo que se revierte. Un producto que nunca tuvo
@@ -254,9 +279,16 @@ function windowInterval(): SQL {
  */
 export async function voidSale(
   db: Db,
-  params: { orgId: string; userId: string; id: string; reason: string },
+  params: {
+    orgId: string
+    userId: string
+    id: string
+    reason: string
+    /** Estado que vio el usuario al abrir el diálogo: si cambió (otro admin aprobó), se aborta. */
+    expectedStatus?: 'pendiente' | 'completada'
+  },
 ): Promise<void> {
-  const { orgId, userId, id, reason } = params
+  const { orgId, userId, id, reason, expectedStatus } = params
   await db.transaction(async (tx) => {
     const [s] = await tx
       .select({
@@ -268,7 +300,10 @@ export async function voidSale(
       .for('update')
     if (!s) throw new SaleNotFoundError()
     if (s.status === 'anulada') throw new SaleError('La venta ya está anulada')
-    if (!s.inWindow) {
+    if (expectedStatus && s.status !== expectedStatus) {
+      throw new SaleError('La venta cambió de estado mientras la revisabas. Recarga la página.')
+    }
+    if (s.status === 'completada' && !s.inWindow) {
       throw new SaleError(`Solo se pueden anular ventas de los últimos ${VOID_WINDOW_DAYS} días`)
     }
 
@@ -330,6 +365,43 @@ export async function voidSale(
       }
     }
   })
+}
+
+/**
+ * Aprueba una venta pendiente (→ completada) y registra quién y cuándo. `FOR UPDATE` de la venta
+ * (acotada por bodega): aprobar y rechazar a la vez se serializan y el segundo ve la venta ya
+ * procesada. No toca stock: la venta pendiente ya lo descontó al cobrar.
+ */
+export async function approveSale(
+  db: Db,
+  params: { orgId: string; userId: string; id: string },
+): Promise<void> {
+  const { orgId, userId, id } = params
+  await db.transaction(async (tx) => {
+    const [s] = await tx
+      .select({ status: sale.status, cashierId: sale.cashierId })
+      .from(sale)
+      .where(and(eq(sale.id, id), eq(sale.organizationId, orgId)))
+      .for('update')
+    if (!s) throw new SaleNotFoundError()
+    if (s.status !== 'pendiente') throw new SaleError('La venta ya fue procesada')
+    // Separación de funciones: quien cobró no valida su propia venta (p. ej. un cajero ascendido)
+    if (s.cashierId === userId) throw new SaleError('No puedes aprobar tus propias ventas')
+
+    await tx
+      .update(sale)
+      .set({ status: 'completada', approvedAt: sql`now()`, approvedById: userId })
+      .where(and(eq(sale.id, id), eq(sale.organizationId, orgId)))
+  })
+}
+
+/** Cantidad de ventas por validar de la bodega (para el contador del menú). */
+export async function countPendingSales(db: Db, orgId: string): Promise<number> {
+  const [r] = await db
+    .select({ n: sql<number>`count(*)`.mapWith(Number) })
+    .from(sale)
+    .where(and(eq(sale.organizationId, orgId), eq(sale.status, 'pendiente')))
+  return r.n
 }
 
 export type ExportResult = { rows: ExportRow[]; truncated: boolean }
