@@ -19,13 +19,23 @@ const sale: SaleSummary = {
   status: 'completada',
   voidedAt: null,
   voidReason: null,
+  business: {
+    version: 1,
+    tradeName: 'Bodega San Martín',
+    legalName: null,
+    ruc: null,
+    address: null,
+    phone: null,
+    branchName: null,
+    receiptFooter: 'Gracias por su compra',
+  },
 }
 
 const rows = (lines: ReturnType<typeof receiptLines>) =>
   lines.flatMap((l) => (l.kind === 'row' ? [`${l.left}|${l.right}`] : []))
 
 describe('receiptLines', () => {
-  const lines = receiptLines(sale, 'Bodega San Martín')
+  const lines = receiptLines(sale)
 
   it('encabeza con negocio, número y fecha en hora de Lima', () => {
     expect(lines[0]).toMatchObject({ kind: 'center', text: 'BODEGA SAN MARTÍN' })
@@ -50,7 +60,7 @@ describe('receiptLines', () => {
   })
 
   it('cierra con el agradecimiento y omite el cajero si no se conoce', () => {
-    const last = receiptLines({ ...sale, cashierName: null }, 'X')
+    const last = receiptLines({ ...sale, cashierName: null })
     expect(last.at(-1)).toMatchObject({ text: 'Gracias por su compra' })
     expect(rows(last).join()).not.toContain('Cajero/a')
   })
@@ -58,25 +68,22 @@ describe('receiptLines', () => {
 
 describe('receiptLines: cliente', () => {
   it('sin cliente dice "público general"', () => {
-    const r = rows(receiptLines(sale, 'X'))
+    const r = rows(receiptLines(sale))
     expect(r).toContain('Cliente: público general|')
     expect(r.some((l) => /^(DNI|RUC|CE) /.test(l))).toBe(false)
   })
 
   it('con DNI muestra el nombre y el documento', () => {
     const r = rows(
-      receiptLines(
-        {
-          ...sale,
-          customer: {
-            id: 'c1',
-            name: 'Juan Pérez',
-            documentType: 'dni',
-            documentNumber: '12345678',
-          },
+      receiptLines({
+        ...sale,
+        customer: {
+          id: 'c1',
+          name: 'Juan Pérez',
+          documentType: 'dni',
+          documentNumber: '12345678',
         },
-        'X',
-      ),
+      }),
     )
     expect(r).toContain('Cliente: Juan Pérez|')
     expect(r).toContain('DNI 12345678|')
@@ -85,31 +92,25 @@ describe('receiptLines: cliente', () => {
 
   it('con RUC muestra el RUC', () => {
     const r = rows(
-      receiptLines(
-        {
-          ...sale,
-          customer: {
-            id: 'c2',
-            name: 'Distribuidora SAC',
-            documentType: 'ruc',
-            documentNumber: '20100047218',
-          },
+      receiptLines({
+        ...sale,
+        customer: {
+          id: 'c2',
+          name: 'Distribuidora SAC',
+          documentType: 'ruc',
+          documentNumber: '20100047218',
         },
-        'X',
-      ),
+      }),
     )
     expect(r).toContain('RUC 20100047218|')
   })
 
   it('un cliente sin documento muestra solo el nombre', () => {
     const r = rows(
-      receiptLines(
-        {
-          ...sale,
-          customer: { id: 'c3', name: 'Doña Rosa', documentType: null, documentNumber: null },
-        },
-        'X',
-      ),
+      receiptLines({
+        ...sale,
+        customer: { id: 'c3', name: 'Doña Rosa', documentType: null, documentNumber: null },
+      }),
     )
     expect(r).toContain('Cliente: Doña Rosa|')
     expect(r.some((l) => /^(DNI|RUC|CE) /.test(l))).toBe(false)
@@ -123,7 +124,7 @@ describe('receiptLines: venta anulada', () => {
     voidedAt: '2026-10-15T15:30:00.000Z', // 10:30 en Lima
     voidReason: 'Error de cobro',
   }
-  const text = receiptLines(voided, 'X').flatMap((l) => (l.kind === 'center' ? [l.text] : []))
+  const text = receiptLines(voided).flatMap((l) => (l.kind === 'center' ? [l.text] : []))
 
   it('muestra el sello ANULADA, la fecha de anulación y el motivo', () => {
     expect(text.join(' ')).toContain('ANULADA')
@@ -137,12 +138,12 @@ describe('receiptLines: venta anulada', () => {
   })
 
   it('una venta vigente no lleva marca de anulación', () => {
-    const ok = receiptLines(sale, 'X').flatMap((l) => (l.kind === 'center' ? [l.text] : []))
+    const ok = receiptLines(sale).flatMap((l) => (l.kind === 'center' ? [l.text] : []))
     expect(ok.join(' ')).not.toMatch(/ANULADA|Motivo/)
   })
 
   it('omite el motivo si no hay', () => {
-    const t = receiptLines({ ...voided, voidReason: null }, 'X').flatMap((l) =>
+    const t = receiptLines({ ...voided, voidReason: null }).flatMap((l) =>
       l.kind === 'center' ? [l.text] : [],
     )
     expect(t.join(' ')).not.toContain('Motivo')
@@ -159,7 +160,7 @@ describe('helpers', () => {
 describe('receiptLines: venta pendiente de validación', () => {
   const pending: SaleSummary = { ...sale, status: 'pendiente' }
   const centers = (s: SaleSummary) =>
-    receiptLines(s, 'X').flatMap((l) => (l.kind === 'center' ? [l.text] : []))
+    receiptLines(s).flatMap((l) => (l.kind === 'center' ? [l.text] : []))
 
   it('lleva la leyenda "VENTA SUJETA A VALIDACIÓN" y sigue siendo un documento válido', () => {
     const text = centers(pending)
@@ -176,5 +177,49 @@ describe('receiptLines: venta pendiente de validación', () => {
     const text = centers({ ...pending, status: 'anulada', voidedAt: '2026-10-14T19:00:00.000Z' })
     expect(text).toContain('*** ANULADA ***')
     expect(text).not.toContain('VENTA SUJETA A VALIDACIÓN')
+  })
+})
+
+describe('receiptLines: datos del negocio', () => {
+  const centers = (s: SaleSummary) =>
+    receiptLines(s).flatMap((l) => (l.kind === 'center' ? [l.text] : []))
+  const full: SaleSummary = {
+    ...sale,
+    business: {
+      version: 1,
+      tradeName: 'Bodega San Martín',
+      legalName: 'Inversiones San Martín S.A.C.',
+      ruc: '20100047218',
+      address: 'Av. Lima 123, Miraflores',
+      phone: '987 654 321',
+      branchName: 'Sede Centro',
+      receiptFooter: 'Vuelva pronto',
+    },
+  }
+
+  it('encabeza con nombre comercial en negrita, razón social, RUC, dirección y teléfono', () => {
+    const lines = receiptLines(full)
+    expect(lines[0]).toMatchObject({ text: 'BODEGA SAN MARTÍN', bold: true, large: true })
+    expect(centers(full).slice(0, 5)).toEqual([
+      'BODEGA SAN MARTÍN',
+      'Inversiones San Martín S.A.C.',
+      'RUC 20100047218',
+      'Av. Lima 123, Miraflores',
+      'Tel. 987 654 321',
+    ])
+  })
+
+  it('el pie es el mensaje configurado', () => {
+    expect(centers(full).at(-1)).toBe('Vuelva pronto')
+  })
+
+  it('con encabezado parcial omite lo que falta', () => {
+    const partial: SaleSummary = {
+      ...sale,
+      business: { ...sale.business, address: 'Jr. Unión 45' },
+    }
+    const t = centers(partial)
+    expect(t.slice(0, 2)).toEqual(['BODEGA SAN MARTÍN', 'Jr. Unión 45'])
+    expect(t.join(' ')).not.toMatch(/RUC|Tel\./)
   })
 })

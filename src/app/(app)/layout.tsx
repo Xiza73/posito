@@ -3,9 +3,11 @@ import { AppHeader } from '@/components/shell/app-header'
 import { BottomTabs } from '@/components/shell/bottom-tabs'
 import { PendingSalesProvider } from '@/components/shell/pending-badge'
 import { Sidebar } from '@/components/shell/sidebar'
+import { db } from '@/lib/db'
 import { initials } from '@/lib/initials'
 import { can, roleLabel } from '@/lib/permissions'
 import { getCurrentMember } from '@/lib/session'
+import { getBusinessProfile } from '@/lib/settings'
 import { parseTheme, THEME_COOKIE } from '@/lib/theme'
 
 function formatToday() {
@@ -21,7 +23,11 @@ function formatToday() {
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   // Verificación real de sesión + membresía (el middleware solo hace un chequeo optimista).
   const { user, member, organization } = await getCurrentMember()
-  const theme = parseTheme((await cookies()).get(THEME_COOKIE)?.value)
+  const [profile, cookieStore] = await Promise.all([
+    getBusinessProfile(db, organization.id),
+    cookies(),
+  ])
+  const theme = parseTheme(cookieStore.get(THEME_COOKIE)?.value)
 
   return (
     <PendingSalesProvider enabled={can(member.role, { sale: ['approve'] })}>
@@ -31,7 +37,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             name: user.name,
             initials: initials(user.name),
             roleLabel: roleLabel(member.role),
-            organizationName: organization.name,
+            businessName: profile.tradeName,
+            branchName: profile.branchName,
             canManage: can(member.role, { member: ['create'] }),
           }}
         />

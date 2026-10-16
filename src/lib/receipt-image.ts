@@ -93,8 +93,8 @@ function layout(ctx: CanvasRenderingContext2D, lines: ReceiptLine[], paint: bool
 }
 
 /** Dibuja la boleta (fondo blanco, texto negro) en un canvas de 576 px de ancho. */
-export function drawReceipt(sale: SaleSummary, businessName: string): HTMLCanvasElement {
-  const lines = receiptLines(sale, businessName)
+export function drawReceipt(sale: SaleSummary): HTMLCanvasElement {
+  const lines = receiptLines(sale)
   const canvas = document.createElement('canvas')
   canvas.width = WIDTH
 
@@ -120,8 +120,8 @@ export function receiptFileName(sale: Pick<SaleSummary, 'series' | 'number'>): s
  * Comparte la boleta como PNG con la hoja de compartir del sistema (móvil); si no hay Web Share
  * con archivos (escritorio), la descarga. Cancelar el diálogo de compartir no es un error.
  */
-export async function shareReceiptImage(sale: SaleSummary, businessName: string): Promise<void> {
-  const canvas = drawReceipt(sale, businessName)
+export async function shareReceiptImage(sale: SaleSummary): Promise<void> {
+  const canvas = drawReceipt(sale)
   const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'))
   if (!blob) throw new Error('No se pudo generar la imagen')
   const file = new File([blob], receiptFileName(sale), { type: 'image/png' })

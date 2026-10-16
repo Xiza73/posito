@@ -31,7 +31,6 @@ export default async function CajaPage() {
     <CajaScreen
       products={products}
       categories={categories}
-      businessName={organization.name}
       canCreateCustomer={can(member.role, { customer: ['create'] })}
     />
   )

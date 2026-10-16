@@ -5,7 +5,10 @@ export type ShellUser = {
   name: string
   initials: string
   roleLabel: string
-  organizationName: string
+  /** Nombre comercial del negocio. */
+  businessName: string
+  /** Sucursal, si está configurada. */
+  branchName: string | null
   canManage: boolean
 }
 
@@ -17,9 +20,9 @@ export function Sidebar({ user }: { user: ShellUser }) {
         <div className="size-7.5 flex-none rounded-ctl bg-accent" aria-hidden="true" />
         <div className="hidden min-w-0 lg:block">
           <div className="truncate font-semibold text-[15px] leading-tight">
-            {user.organizationName}
+            {user.businessName}
           </div>
-          <div className="truncate text-muted text-xs">Ventalia POS</div>
+          <div className="truncate text-muted text-xs">{user.branchName ?? 'Ventalia POS'}</div>
         </div>
       </div>
 

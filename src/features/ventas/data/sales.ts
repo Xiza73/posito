@@ -6,6 +6,7 @@ import { limaRangeToUtc } from '@/lib/lima-time'
 import type { PaymentMethod } from '@/lib/payment'
 import { seesAllSales } from '@/lib/permissions'
 import type { SaleStatus, SaleSummary } from '@/lib/receipt-lines'
+import { snapshotOrCurrent } from '@/lib/settings'
 import type { ExportRow } from '../lib/csv'
 import { EXPORT_LIMIT, PAGE_SIZE, type SalesFilters, VOID_WINDOW_DAYS } from '../lib/filters'
 
@@ -217,6 +218,7 @@ export async function getSale(
       customerName: sale.customerName,
       customerDocumentType: sale.customerDocumentType,
       customerDocumentNumber: sale.customerDocumentNumber,
+      businessSnapshot: sale.businessSnapshot,
       withinVoidWindow: sql<boolean>`${sale.createdAt} >= now() - ${windowInterval()}`,
     })
     .from(sale)
@@ -262,6 +264,7 @@ export async function getSale(
     status: row.status,
     voidedAt: row.voidedAt?.toISOString() ?? null,
     voidReason: row.voidReason,
+    business: await snapshotOrCurrent(db, orgId, row.businessSnapshot),
     cashierId: row.cashierId,
     voidedByName: row.voidedByName,
     approvedAt: row.approvedAt?.toISOString() ?? null,

@@ -4,6 +4,7 @@ import {
   check,
   index,
   integer,
+  jsonb,
   pgEnum,
   pgTable,
   text,
@@ -135,6 +136,9 @@ export const sale = pgTable(
     customerName: text(),
     customerDocumentType: documentType(),
     customerDocumentNumber: text(),
+    // Snapshot de los datos del negocio al cobrar (BusinessSnapshot, version 1): la boleta lo lee
+    // de aquí; null = venta anterior a la función (se usa el perfil vigente como respaldo).
+    businessSnapshot: jsonb(),
     paymentMethod: paymentMethod().notNull(),
     // IGV incluido: subtotal + igv = total (ver features/caja/lib/totals.ts)
     subtotalCents: integer().notNull(),
@@ -177,6 +181,15 @@ export const organizationSettings = pgTable('organization_settings', {
     .references(() => organization.id, { onDelete: 'cascade' }),
   // true = las ventas de los cajeros quedan 'pendiente' hasta que un admin las apruebe
   requireSaleApproval: boolean().default(false).notNull(),
+  // Datos del negocio (todos opcionales; los valores por defecto se resuelven en
+  // lib/settings.ts: tradeName vacío = nombre de la organization, receiptFooter vacío = agradecimiento)
+  tradeName: text(),
+  legalName: text(),
+  ruc: text(),
+  address: text(),
+  phone: text(),
+  branchName: text(),
+  receiptFooter: text(),
   updatedAt: updatedAt(),
 })
 

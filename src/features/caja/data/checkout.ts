@@ -1,11 +1,13 @@
 import { and, asc, eq, inArray, sql } from 'drizzle-orm'
 import { customer, product, receiptSeries, sale, saleItem, stockMovement, user } from '@/db/schema'
+import { toSnapshot } from '@/lib/business-profile'
 import type { Db } from '@/lib/db-types'
 import type { DocumentType } from '@/lib/document'
 import { uniqueViolation } from '@/lib/errors'
 import type { PaymentMethod } from '@/lib/payment'
 import { DEFAULT_RECEIPT_SERIES } from '@/lib/receipt'
 import type { SaleSummary } from '@/lib/receipt-lines'
+import { getBusinessProfile, snapshotOrCurrent } from '@/lib/settings'
 import { MAX_QTY } from '../lib/schemas'
 import { computeTotals } from '../lib/totals'
 
@@ -185,6 +187,9 @@ export async function checkout(db: Db, params: CheckoutParams): Promise<SaleSumm
         })
         .returning({ series: receiptSeries.series, number: receiptSeries.lastNumber })
 
+      // Datos del negocio congelados en la venta: cambiar el perfil después no reescribe boletas
+      const business = toSnapshot(await getBusinessProfile(tx, orgId))
+
       await tx.insert(sale).values({
         id: saleId,
         organizationId: orgId,
@@ -195,6 +200,7 @@ export async function checkout(db: Db, params: CheckoutParams): Promise<SaleSumm
         customerName: snapshot?.name ?? null,
         customerDocumentType: snapshot?.documentType ?? null,
         customerDocumentNumber: snapshot?.documentNumber ?? null,
+        businessSnapshot: business,
         paymentMethod,
         subtotalCents: totals.subtotal,
         igvCents: totals.igv,
@@ -275,6 +281,7 @@ async function findExisting(
       customerName: sale.customerName,
       customerDocumentType: sale.customerDocumentType,
       customerDocumentNumber: sale.customerDocumentNumber,
+      businessSnapshot: sale.businessSnapshot,
     })
     .from(sale)
     .leftJoin(user, eq(user.id, sale.cashierId))
@@ -319,6 +326,7 @@ async function findExisting(
     status: row.status,
     voidedAt: row.voidedAt?.toISOString() ?? null,
     voidReason: row.voidReason,
+    business: await snapshotOrCurrent(tx, orgId, row.businessSnapshot),
   }
 }
 
