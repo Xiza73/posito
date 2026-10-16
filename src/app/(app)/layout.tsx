@@ -1,7 +1,13 @@
 import { cookies } from 'next/headers'
 import { AppHeader } from '@/components/shell/app-header'
 import { BottomTabs } from '@/components/shell/bottom-tabs'
+import { PendingSalesProvider } from '@/components/shell/pending-badge'
 import { Sidebar } from '@/components/shell/sidebar'
+import { db } from '@/lib/db'
+import { initials } from '@/lib/initials'
+import { can, roleLabel } from '@/lib/permissions'
+import { getCurrentMember } from '@/lib/session'
+import { getBusinessProfile } from '@/lib/settings'
 import { parseTheme, THEME_COOKIE } from '@/lib/theme'
 
 function formatToday() {
@@ -15,16 +21,35 @@ function formatToday() {
 }
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
-  const theme = parseTheme((await cookies()).get(THEME_COOKIE)?.value)
+  // Verificación real de sesión + membresía (el middleware solo hace un chequeo optimista).
+  const { user, member, organization } = await getCurrentMember()
+  const [profile, cookieStore] = await Promise.all([
+    getBusinessProfile(db, organization.id),
+    cookies(),
+  ])
+  const theme = parseTheme(cookieStore.get(THEME_COOKIE)?.value)
 
   return (
-    <div className="flex h-dvh overflow-hidden bg-page">
-      <Sidebar />
-      <div className="flex min-w-0 flex-1 flex-col">
-        <AppHeader today={formatToday()} theme={theme} />
-        <main className="flex min-h-0 flex-1 flex-col overflow-auto pb-17 md:pb-0">{children}</main>
+    <PendingSalesProvider enabled={can(member.role, { sale: ['approve'] })}>
+      <div className="flex h-dvh overflow-hidden bg-page">
+        <Sidebar
+          user={{
+            name: user.name,
+            initials: initials(user.name),
+            roleLabel: roleLabel(member.role),
+            businessName: profile.tradeName,
+            branchName: profile.branchName,
+            canManage: can(member.role, { member: ['create'] }),
+          }}
+        />
+        <div className="flex min-w-0 flex-1 flex-col">
+          <AppHeader today={formatToday()} theme={theme} />
+          <main className="flex min-h-0 flex-1 flex-col overflow-auto pb-17 md:pb-0">
+            {children}
+          </main>
+        </div>
+        <BottomTabs />
       </div>
-      <BottomTabs />
-    </div>
+    </PendingSalesProvider>
   )
 }

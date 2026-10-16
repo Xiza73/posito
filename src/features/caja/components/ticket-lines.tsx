@@ -1,16 +1,15 @@
 import { formatCents } from '@/lib/format'
-import type { CatalogItem } from '../data/products.mock'
-import { MADE_TO_ORDER_STOCK } from '../data/products.mock'
+import { type CatalogProduct, canAddMore } from '../lib/catalog'
 import { lineTotalCents } from '../lib/totals'
 
 export type CartLineView = {
-  item: CatalogItem
+  item: CatalogProduct
   qty: number
 }
 
 type Props = {
   lines: CartLineView[]
-  onChangeQty: (key: string, delta: 1 | -1) => void
+  onChangeQty: (id: string, delta: 1 | -1) => void
   /** Botones de cantidad más grandes (hoja móvil). */
   large?: boolean
 }
@@ -21,21 +20,19 @@ export function TicketLines({ lines, onChangeQty, large = false }: Props) {
   return (
     <ul>
       {lines.map(({ item, qty }) => {
-        const atMax = item.stock < MADE_TO_ORDER_STOCK && qty >= item.stock
+        const atMax = !canAddMore(item, qty)
         return (
-          <li key={item.key} className="flex items-center gap-2.5 border-line border-b py-3">
+          <li key={item.id} className="flex items-center gap-2.5 border-line border-b py-3">
             <div className="min-w-0 flex-1">
-              <div className="truncate font-medium text-sm">{item.productName}</div>
-              <div className="text-muted text-xs">
-                {item.variantName} · {formatCents(item.priceCents)}
-              </div>
+              <div className="truncate font-medium text-sm">{item.name}</div>
+              <div className="text-muted text-xs">{formatCents(item.priceCents)}</div>
             </div>
             <div className="flex items-center gap-0.5 rounded-full bg-surface-2">
               <button
                 type="button"
                 className={btn}
-                aria-label={`Quitar una unidad de ${item.label}`}
-                onClick={() => onChangeQty(item.key, -1)}
+                aria-label={`Quitar una unidad de ${item.name}`}
+                onClick={() => onChangeQty(item.id, -1)}
               >
                 −
               </button>
@@ -46,8 +43,8 @@ export function TicketLines({ lines, onChangeQty, large = false }: Props) {
                 type="button"
                 className={btn}
                 disabled={atMax}
-                aria-label={`Agregar una unidad de ${item.label}`}
-                onClick={() => onChangeQty(item.key, 1)}
+                aria-label={`Agregar una unidad de ${item.name}`}
+                onClick={() => onChangeQty(item.id, 1)}
               >
                 +
               </button>

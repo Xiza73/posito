@@ -18,6 +18,7 @@
       "Bash(bunx biome format:*)",
       "Bash(bunx playwright test:*)",
       "Bash(bunx drizzle-kit generate:*)",
+      "Bash(bun run db:generate:*)",
       "Bash(git status:*)",
       "Bash(git diff:*)",
       "Bash(git log:*)",

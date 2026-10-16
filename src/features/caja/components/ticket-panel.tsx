@@ -1,13 +1,22 @@
+import type { CustomerOption } from '@/lib/customer-input'
 import { formatCents } from '@/lib/format'
+import type { PaymentMethod } from '@/lib/payment'
 import type { Totals } from '../lib/totals'
-import { type PaymentMethod, PaymentMethods } from './payment-methods'
+import { CustomerBar } from './customer-bar'
+import { PaymentMethods } from './payment-methods'
 import { type CartLineView, TicketLines } from './ticket-lines'
 
 type Props = {
   lines: CartLineView[]
   totals: Totals
   pay: PaymentMethod
-  notice: string | null
+  error: string | null
+  pending: boolean
+  customer: CustomerOption | null
+  /** Ticket congelado (cobro sin confirmar): el cliente tampoco se puede cambiar. */
+  customerLocked: boolean
+  onPickCustomer: () => void
+  onClearCustomer: () => void
   onPay: (method: PaymentMethod) => void
   onChangeQty: (key: string, delta: 1 | -1) => void
   onClear: () => void
@@ -19,7 +28,12 @@ export function TicketPanel({
   lines,
   totals,
   pay,
-  notice,
+  error,
+  pending,
+  customer,
+  customerLocked,
+  onPickCustomer,
+  onClearCustomer,
   onPay,
   onChangeQty,
   onClear,
@@ -34,15 +48,14 @@ export function TicketPanel({
     >
       <div className="flex flex-none items-center justify-between px-5 pt-5 pb-3">
         <h2 className="font-semibold">Ticket actual</h2>
-        <span className="font-mono text-muted text-xs">B001-00038</span>
       </div>
-      <button
-        type="button"
-        className="mx-5 mb-3 flex h-10.5 flex-none cursor-pointer items-center gap-2.5 rounded-ctl border border-line border-dashed px-3 text-left text-[13px] text-muted hover:border-accent"
-      >
-        <span className="size-2 rounded-full bg-accent" aria-hidden="true" />
-        Cliente: público general · añadir
-      </button>
+      <CustomerBar
+        customer={customer}
+        disabled={customerLocked || pending}
+        onPick={onPickCustomer}
+        onClear={onClearCustomer}
+        className="mx-5 mb-3 flex-none"
+      />
 
       <div className="flex min-h-37.5 flex-1 flex-col overflow-auto px-5">
         {empty ? (
@@ -50,7 +63,7 @@ export function TicketPanel({
             role="status"
             className="grid flex-1 place-items-center p-7 text-center text-muted text-sm"
           >
-            {notice ?? 'Toca un producto o escanea un código para empezar'}
+            Toca un producto o escanea un código para empezar
           </p>
         ) : (
           <TicketLines lines={lines} onChangeQty={onChangeQty} />
@@ -71,11 +84,16 @@ export function TicketPanel({
           <span className="font-mono text-2xl">{formatCents(totals.total)}</span>
         </div>
         <PaymentMethods value={pay} onChange={onPay} />
+        {error ? (
+          <p role="alert" className="text-bad text-sm">
+            {error}
+          </p>
+        ) : null}
         <div className="flex gap-2">
           <button
             type="button"
             onClick={onClear}
-            disabled={empty}
+            disabled={empty || pending}
             className="h-12.5 cursor-pointer rounded-ctl border border-line px-4 text-sm hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-50"
           >
             Vaciar
@@ -83,10 +101,10 @@ export function TicketPanel({
           <button
             type="button"
             onClick={onCharge}
-            disabled={empty}
+            disabled={empty || pending}
             className="h-12.5 flex-1 cursor-pointer rounded-ctl bg-accent font-semibold text-[15px] text-accent-ink disabled:cursor-not-allowed disabled:opacity-50"
           >
-            Cobrar {formatCents(totals.total)}
+            {pending ? 'Cobrando…' : `Cobrar ${formatCents(totals.total)}`}
           </button>
         </div>
       </div>

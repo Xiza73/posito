@@ -2,6 +2,10 @@ export type NavItem = {
   href: string
   label: string
   icon: string
+  /** Solo para quien gestiona la bodega (owner/admin). */
+  manage?: boolean
+  /** Lleva el contador de ventas por validar. */
+  pending?: boolean
 }
 
 export const ICONS = {
@@ -18,21 +22,27 @@ export const ICONS = {
   mas: 'M5 12h.01M12 12h.01M19 12h.01',
 } as const
 
-const item = (key: keyof typeof ICONS, href: string, label: string): NavItem => ({
+const item = (key: keyof typeof ICONS, href: string, label: string, manage = false): NavItem => ({
   href,
   label,
   icon: ICONS[key],
+  manage,
 })
+
+/** Oculta las secciones de gestión (Usuarios, Configuración) a quien no puede gestionar. */
+export function visibleItems(items: NavItem[], canManage: boolean): NavItem[] {
+  return canManage ? items : items.filter((it) => !it.manage)
+}
 
 export const NAV_ITEMS: NavItem[] = [
   item('inicio', '/', 'Inicio'),
   item('caja', '/caja', 'Caja'),
-  item('ventas', '/ventas', 'Ventas'),
+  { ...item('ventas', '/ventas', 'Ventas'), pending: true },
   item('productos', '/productos', 'Productos'),
   item('inventario', '/inventario', 'Inventario'),
   item('clientes', '/clientes', 'Clientes'),
-  item('usuarios', '/usuarios', 'Usuarios'),
-  item('configuracion', '/configuracion', 'Configuración'),
+  item('usuarios', '/usuarios', 'Usuarios', true),
+  item('configuracion', '/configuracion', 'Configuración', true),
 ]
 
 const byHref = (href: string) => NAV_ITEMS.find((n) => n.href === href) as NavItem

@@ -1,8 +1,11 @@
 'use client'
 
 import { useEffect } from 'react'
+import type { CustomerOption } from '@/lib/customer-input'
 import { formatCents } from '@/lib/format'
-import { type PaymentMethod, PaymentMethods } from './payment-methods'
+import type { PaymentMethod } from '@/lib/payment'
+import { CustomerBar } from './customer-bar'
+import { PaymentMethods } from './payment-methods'
 import { type CartLineView, TicketLines } from './ticket-lines'
 
 type Props = {
@@ -11,6 +14,12 @@ type Props = {
   totalCents: number
   open: boolean
   pay: PaymentMethod
+  error: string | null
+  pending: boolean
+  customer: CustomerOption | null
+  customerLocked: boolean
+  onPickCustomer: () => void
+  onClearCustomer: () => void
   onOpen: () => void
   onClose: () => void
   onPay: (method: PaymentMethod) => void
@@ -25,6 +34,12 @@ export function MobileCart({
   totalCents,
   open,
   pay,
+  error,
+  pending,
+  customer,
+  customerLocked,
+  onPickCustomer,
+  onClearCustomer,
   onOpen,
   onClose,
   onPay,
@@ -78,19 +93,31 @@ export function MobileCart({
             <div className="mx-auto mt-2.5 h-1 w-10 rounded-sm bg-line" aria-hidden="true" />
             <div className="flex items-center justify-between px-5 pt-3.5 pb-2">
               <h2 className="font-semibold">Ticket actual</h2>
-              <span className="font-mono text-muted text-xs">B001-00038</span>
             </div>
+            <CustomerBar
+              customer={customer}
+              disabled={customerLocked || pending}
+              onPick={onPickCustomer}
+              onClear={onClearCustomer}
+              className="mx-5 mb-2"
+            />
             <div className="flex-1 overflow-auto px-5">
               <TicketLines lines={lines} onChangeQty={onChangeQty} large />
             </div>
             <div className="flex flex-col gap-3 border-line border-t px-5 pt-3.5 pb-6">
               <PaymentMethods value={pay} onChange={onPay} />
+              {error ? (
+                <p role="alert" className="text-bad text-sm">
+                  {error}
+                </p>
+              ) : null}
               <button
                 type="button"
                 onClick={onCharge}
-                className="h-13 cursor-pointer rounded-ctl bg-accent font-semibold text-[15px] text-accent-ink"
+                disabled={pending}
+                className="h-13 cursor-pointer rounded-ctl bg-accent font-semibold text-[15px] text-accent-ink disabled:cursor-wait disabled:opacity-60"
               >
-                Cobrar {total}
+                {pending ? 'Cobrando…' : `Cobrar ${total}`}
               </button>
             </div>
           </div>

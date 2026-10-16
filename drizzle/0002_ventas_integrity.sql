@@ -1,0 +1,3 @@
+CREATE INDEX "stock_movement_sale_idx" ON "stock_movement" USING btree ("sale_id");--> statement-breakpoint
+CREATE UNIQUE INDEX "stock_movement_sale_product_type_uq" ON "stock_movement" USING btree ("sale_id","product_id","type");--> statement-breakpoint
+ALTER TABLE "stock_movement" ADD CONSTRAINT "stock_movement_sign_by_type" CHECK (("stock_movement"."type" <> 'venta' or "stock_movement"."quantity" < 0) and ("stock_movement"."type" not in ('anulacion', 'ingreso') or "stock_movement"."quantity" > 0));
