@@ -1,4 +1,4 @@
-import { stockStatus } from '../lib/stock-status'
+import { stockStatus } from '@/lib/stock-status'
 
 type Props = { tracksStock: boolean; stock: number; minStock: number }
 
