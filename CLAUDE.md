@@ -64,7 +64,7 @@ bun run seed:productos -- --slug bodega-x   # productos de demostración en una 
 ```
 
 Puerta antes de commit: `bun run lint && bun run typecheck && bun run test`.
-Puerta antes de push a rama compartida: además `bun run build`.
+El **build lo corre CI** (`.github/workflows/ci.yml`: lint, typecheck, test y build en cada PR y en push a `dev`/`master`), no la máquina local. No se mergea un PR con CI en rojo. Las actions van **fijadas por SHA** (con el tag en comentario), nunca por tag móvil.
 
 ## 5. Convenciones de código
 
