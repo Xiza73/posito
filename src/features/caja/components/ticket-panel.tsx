@@ -1,6 +1,8 @@
+import type { CustomerOption } from '@/lib/customer-input'
 import { formatCents } from '@/lib/format'
 import type { PaymentMethod } from '@/lib/payment'
 import type { Totals } from '../lib/totals'
+import { CustomerBar } from './customer-bar'
 import { PaymentMethods } from './payment-methods'
 import { type CartLineView, TicketLines } from './ticket-lines'
 
@@ -10,6 +12,11 @@ type Props = {
   pay: PaymentMethod
   error: string | null
   pending: boolean
+  customer: CustomerOption | null
+  /** Ticket congelado (cobro sin confirmar): el cliente tampoco se puede cambiar. */
+  customerLocked: boolean
+  onPickCustomer: () => void
+  onClearCustomer: () => void
   onPay: (method: PaymentMethod) => void
   onChangeQty: (key: string, delta: 1 | -1) => void
   onClear: () => void
@@ -23,6 +30,10 @@ export function TicketPanel({
   pay,
   error,
   pending,
+  customer,
+  customerLocked,
+  onPickCustomer,
+  onClearCustomer,
   onPay,
   onChangeQty,
   onClear,
@@ -38,13 +49,13 @@ export function TicketPanel({
       <div className="flex flex-none items-center justify-between px-5 pt-5 pb-3">
         <h2 className="font-semibold">Ticket actual</h2>
       </div>
-      <button
-        type="button"
-        className="mx-5 mb-3 flex h-10.5 flex-none cursor-pointer items-center gap-2.5 rounded-ctl border border-line border-dashed px-3 text-left text-[13px] text-muted hover:border-accent"
-      >
-        <span className="size-2 rounded-full bg-accent" aria-hidden="true" />
-        Cliente: público general · añadir
-      </button>
+      <CustomerBar
+        customer={customer}
+        disabled={customerLocked || pending}
+        onPick={onPickCustomer}
+        onClear={onClearCustomer}
+        className="mx-5 mb-3 flex-none"
+      />
 
       <div className="flex min-h-37.5 flex-1 flex-col overflow-auto px-5">
         {empty ? (

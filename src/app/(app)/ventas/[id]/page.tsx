@@ -1,11 +1,12 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { z } from 'zod'
+import { StatusBadge } from '@/components/ui/status-badge'
 import { SaleActions } from '@/features/ventas/components/sale-actions'
-import { StatusBadge } from '@/features/ventas/components/status-badge'
 import { getSale } from '@/features/ventas/data/sales'
 import { VOID_WINDOW_DAYS } from '@/features/ventas/lib/filters'
 import { db } from '@/lib/db'
+import { formatDocument } from '@/lib/document'
 import { formatCents } from '@/lib/format'
 import { PAYMENT_LABELS } from '@/lib/payment'
 import { can } from '@/lib/permissions'
@@ -98,10 +99,33 @@ export default async function VentaPage({ params }: { params: Promise<{ id: stri
         </section>
       ) : null}
 
-      <dl className="grid grid-cols-2 gap-4 rounded-card border border-line bg-surface p-4 md:grid-cols-4">
+      <dl className="grid grid-cols-2 gap-4 rounded-card border border-line bg-surface p-4 md:grid-cols-5">
         <Meta label="Fecha">{formatReceiptDate(sale.createdAt)}</Meta>
         <Meta label="Cajero/a">{sale.cashierName ?? '—'}</Meta>
         <Meta label="Pago">{PAYMENT_LABELS[sale.paymentMethod]}</Meta>
+        <Meta label="Cliente">
+          {sale.customer ? (
+            <>
+              {sale.customer.id ? (
+                <Link
+                  href={`/clientes/${sale.customer.id}`}
+                  className="text-accent underline-offset-2 hover:underline"
+                >
+                  {sale.customer.name}
+                </Link>
+              ) : (
+                sale.customer.name
+              )}
+              {sale.customer.documentType && sale.customer.documentNumber ? (
+                <div className="font-mono text-muted text-xs">
+                  {formatDocument(sale.customer.documentType, sale.customer.documentNumber)}
+                </div>
+              ) : null}
+            </>
+          ) : (
+            'Público general'
+          )}
+        </Meta>
         <Meta label="Total">
           <span className="font-mono font-semibold">{formatCents(sale.totalCents)}</span>
         </Meta>

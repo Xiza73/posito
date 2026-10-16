@@ -10,6 +10,17 @@ describe('roles', () => {
     expect(roles.cajero.authorize({ report: ['view'] }).success).toBe(false)
   })
 
+  it('cajero registra y corrige clientes, pero no los desactiva', () => {
+    expect(roles.cajero.authorize({ customer: ['create'] }).success).toBe(true)
+    expect(roles.cajero.authorize({ customer: ['update'] }).success).toBe(true)
+    expect(roles.cajero.authorize({ customer: ['delete'] }).success).toBe(false)
+  })
+
+  it('admin y owner gestionan clientes (incluido desactivar)', () => {
+    expect(roles.admin.authorize({ customer: ['create', 'update', 'delete'] }).success).toBe(true)
+    expect(roles.owner.authorize({ customer: ['create', 'update', 'delete'] }).success).toBe(true)
+  })
+
   it('cajero no gestiona miembros', () => {
     expect(roles.cajero.authorize({ member: ['create'] }).success).toBe(false)
     expect(roles.cajero.authorize({ member: ['update'] }).success).toBe(false)

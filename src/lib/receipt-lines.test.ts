@@ -15,6 +15,7 @@ const sale: SaleSummary = {
   igvCents: 105,
   totalCents: 690,
   cashierName: 'Ana Rojas',
+  customer: null,
   status: 'completada',
   voidedAt: null,
   voidReason: null,
@@ -52,6 +53,66 @@ describe('receiptLines', () => {
     const last = receiptLines({ ...sale, cashierName: null }, 'X')
     expect(last.at(-1)).toMatchObject({ text: 'Gracias por su compra' })
     expect(rows(last).join()).not.toContain('Cajero/a')
+  })
+})
+
+describe('receiptLines: cliente', () => {
+  it('sin cliente dice "público general"', () => {
+    const r = rows(receiptLines(sale, 'X'))
+    expect(r).toContain('Cliente: público general|')
+    expect(r.some((l) => /^(DNI|RUC|CE) /.test(l))).toBe(false)
+  })
+
+  it('con DNI muestra el nombre y el documento', () => {
+    const r = rows(
+      receiptLines(
+        {
+          ...sale,
+          customer: {
+            id: 'c1',
+            name: 'Juan Pérez',
+            documentType: 'dni',
+            documentNumber: '12345678',
+          },
+        },
+        'X',
+      ),
+    )
+    expect(r).toContain('Cliente: Juan Pérez|')
+    expect(r).toContain('DNI 12345678|')
+    expect(r).not.toContain('Cliente: público general|')
+  })
+
+  it('con RUC muestra el RUC', () => {
+    const r = rows(
+      receiptLines(
+        {
+          ...sale,
+          customer: {
+            id: 'c2',
+            name: 'Distribuidora SAC',
+            documentType: 'ruc',
+            documentNumber: '20100047218',
+          },
+        },
+        'X',
+      ),
+    )
+    expect(r).toContain('RUC 20100047218|')
+  })
+
+  it('un cliente sin documento muestra solo el nombre', () => {
+    const r = rows(
+      receiptLines(
+        {
+          ...sale,
+          customer: { id: 'c3', name: 'Doña Rosa', documentType: null, documentNumber: null },
+        },
+        'X',
+      ),
+    )
+    expect(r).toContain('Cliente: Doña Rosa|')
+    expect(r.some((l) => /^(DNI|RUC|CE) /.test(l))).toBe(false)
   })
 })
 

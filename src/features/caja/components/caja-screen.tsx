@@ -2,12 +2,14 @@
 
 import { useRef, useState, useTransition } from 'react'
 import { ReceiptDialog } from '@/components/receipt/receipt-dialog'
+import type { CustomerOption } from '@/lib/customer-input'
 import type { PaymentMethod } from '@/lib/payment'
 import type { SaleSummary } from '@/lib/receipt-lines'
 import { checkoutAction } from '../actions'
 import { type CatalogProduct, canAddMore, matchesQuery } from '../lib/catalog'
 import { computeTotals, itemCount } from '../lib/totals'
 import { CategoryChips } from './category-chips'
+import { CustomerPicker } from './customer-picker'
 import { MobileCart } from './mobile-cart'
 import { ProductCard } from './product-card'
 import { ProductSearch } from './product-search'
@@ -23,9 +25,11 @@ type Props = {
   categories: string[]
   /** Nombre de la bodega, para el encabezado de la boleta. */
   businessName: string
+  /** `customer:create`: habilita el alta rápida de clientes en el selector. */
+  canCreateCustomer: boolean
 }
 
-export function CajaScreen({ products, categories, businessName }: Props) {
+export function CajaScreen({ products, categories, businessName, canCreateCustomer }: Props) {
   const [query, setQuery] = useState('')
   const [category, setCategory] = useState<string | null>(null)
   const [cart, setCart] = useState<Cart>({})
@@ -33,6 +37,9 @@ export function CajaScreen({ products, categories, businessName }: Props) {
   const [sheetOpen, setSheetOpen] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [receipt, setReceipt] = useState<SaleSummary | null>(null)
+  // null = público general. Solo viaja el id: el servidor verifica bodega y estado activo.
+  const [customer, setCustomer] = useState<CustomerOption | null>(null)
+  const [picking, setPicking] = useState(false)
   const [pending, startTransition] = useTransition()
   // Idempotencia: el mismo id sobrevive a los reintentos hasta que la venta se cobra o se vacía el
   // ticket; así un reintento tras un corte de red no duplica la venta ni el descuento de stock.
@@ -77,6 +84,7 @@ export function CajaScreen({ products, categories, businessName }: Props) {
 
   function clear() {
     setCart({})
+    setCustomer(null)
     setSheetOpen(false)
     setError(null)
     setUnconfirmed(false)
@@ -89,6 +97,7 @@ export function CajaScreen({ products, categories, businessName }: Props) {
     const input = {
       saleId: saleIdRef.current,
       paymentMethod: pay,
+      customerId: customer?.id,
       items: lines.map((l) => ({ productId: l.item.id, quantity: l.qty })),
     }
     setError(null)
@@ -142,6 +151,10 @@ export function CajaScreen({ products, categories, businessName }: Props) {
           pay={pay}
           error={error}
           pending={pending}
+          customer={customer}
+          customerLocked={unconfirmed}
+          onPickCustomer={() => setPicking(true)}
+          onClearCustomer={() => setCustomer(null)}
           onPay={setPay}
           onChangeQty={changeQty}
           onClear={clear}
@@ -156,6 +169,10 @@ export function CajaScreen({ products, categories, businessName }: Props) {
           pay={pay}
           error={error}
           pending={pending}
+          customer={customer}
+          customerLocked={unconfirmed}
+          onPickCustomer={() => setPicking(true)}
+          onClearCustomer={() => setCustomer(null)}
           onOpen={() => setSheetOpen(true)}
           onClose={() => setSheetOpen(false)}
           onPay={setPay}
@@ -163,6 +180,16 @@ export function CajaScreen({ products, categories, businessName }: Props) {
           onCharge={charge}
         />
       </div>
+      {picking ? (
+        <CustomerPicker
+          canCreate={canCreateCustomer}
+          onClose={() => setPicking(false)}
+          onPick={(c) => {
+            setCustomer(c)
+            setPicking(false)
+          }}
+        />
+      ) : null}
       <ReceiptDialog
         sale={receipt}
         businessName={businessName}

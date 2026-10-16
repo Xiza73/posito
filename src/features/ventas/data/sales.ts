@@ -213,6 +213,10 @@ export async function getSale(
       voidedByName: voider.name,
       approvedAt: sale.approvedAt,
       approvedByName: approver.name,
+      customerId: sale.customerId,
+      customerName: sale.customerName,
+      customerDocumentType: sale.customerDocumentType,
+      customerDocumentNumber: sale.customerDocumentNumber,
       withinVoidWindow: sql<boolean>`${sale.createdAt} >= now() - ${windowInterval()}`,
     })
     .from(sale)
@@ -246,6 +250,15 @@ export async function getSale(
     igvCents: row.igvCents,
     totalCents: row.totalCents,
     cashierName: row.cashierName,
+    // Snapshot de la venta, nunca el cliente vivo
+    customer: row.customerName
+      ? {
+          id: row.customerId,
+          name: row.customerName,
+          documentType: row.customerDocumentType,
+          documentNumber: row.customerDocumentNumber,
+        }
+      : null,
     status: row.status,
     voidedAt: row.voidedAt?.toISOString() ?? null,
     voidReason: row.voidReason,

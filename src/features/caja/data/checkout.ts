@@ -1,6 +1,7 @@
 import { and, asc, eq, inArray, sql } from 'drizzle-orm'
-import { product, receiptSeries, sale, saleItem, stockMovement, user } from '@/db/schema'
+import { customer, product, receiptSeries, sale, saleItem, stockMovement, user } from '@/db/schema'
 import type { Db } from '@/lib/db-types'
+import type { DocumentType } from '@/lib/document'
 import { uniqueViolation } from '@/lib/errors'
 import type { PaymentMethod } from '@/lib/payment'
 import { DEFAULT_RECEIPT_SERIES } from '@/lib/receipt'
@@ -41,6 +42,13 @@ export class ProductUnavailableError extends CheckoutError {
   }
 }
 
+export class CustomerUnavailableError extends CheckoutError {
+  constructor() {
+    super('El cliente ya no está disponible')
+    this.name = 'CustomerUnavailableError'
+  }
+}
+
 const GENERIC = 'No se pudo registrar la venta. Inténtalo de nuevo.'
 
 type Tx = Parameters<Parameters<Db['transaction']>[0]>[0]
@@ -57,6 +65,11 @@ export type CheckoutParams = {
    * completada: el cliente se lleva la mercadería; rechazarla = anularla.
    */
   requireApproval: boolean
+  /**
+   * Cliente elegido en la caja (null/ausente = público general). Solo es un id: el servidor
+   * verifica que sea de ESTA bodega y esté activo; nombre y documento salen de la DB.
+   */
+  customerId?: string | null
   /** Solo producto y cantidad: los precios SIEMPRE se leen de la DB. */
   items: { productId: string; quantity: number }[]
 }
@@ -89,7 +102,7 @@ function mergeItems(items: CheckoutParams['items']): Map<string, number> {
  *  - El índice único (org, serie, número) es la red de seguridad final.
  */
 export async function checkout(db: Db, params: CheckoutParams): Promise<SaleSummary> {
-  const { orgId, userId, saleId, paymentMethod, requireApproval } = params
+  const { orgId, userId, saleId, paymentMethod, requireApproval, customerId = null } = params
   const merged = mergeItems(params.items)
 
   try {
@@ -114,6 +127,35 @@ export async function checkout(db: Db, params: CheckoutParams): Promise<SaleSumm
       // Un reintento gemelo pudo confirmarse mientras esperábamos el bloqueo: si ya existe, listo.
       const twin = await findExisting(tx, orgId, userId, saleId)
       if (twin) return twin
+
+      // Después del reintento gemelo: reintentar una venta ya guardada no depende de que el cliente
+      // siga activo. Esta MISMA consulta verifica (bodega + activo) y trae el snapshot que se
+      // guarda en la venta; `FOR SHARE` impide que lo editen o desactiven hasta el commit.
+      let snapshot: {
+        name: string
+        documentType: DocumentType | null
+        documentNumber: string | null
+      } | null = null
+      if (customerId) {
+        const [found] = await tx
+          .select({
+            name: customer.name,
+            documentType: customer.documentType,
+            documentNumber: customer.documentNumber,
+          })
+          .from(customer)
+          .where(
+            and(
+              eq(customer.id, customerId),
+              eq(customer.organizationId, orgId),
+              eq(customer.active, true),
+            ),
+          )
+          .limit(1)
+          .for('share')
+        if (!found) throw new CustomerUnavailableError()
+        snapshot = found
+      }
 
       if (products.length !== ids.length) throw await unavailable(tx, orgId, ids, products)
 
@@ -149,7 +191,10 @@ export async function checkout(db: Db, params: CheckoutParams): Promise<SaleSumm
         series: counter.series,
         number: counter.number,
         cashierId: userId,
-        customerId: null,
+        customerId,
+        customerName: snapshot?.name ?? null,
+        customerDocumentType: snapshot?.documentType ?? null,
+        customerDocumentNumber: snapshot?.documentNumber ?? null,
         paymentMethod,
         subtotalCents: totals.subtotal,
         igvCents: totals.igv,
@@ -226,6 +271,10 @@ async function findExisting(
       status: sale.status,
       voidedAt: sale.voidedAt,
       voidReason: sale.voidReason,
+      customerId: sale.customerId,
+      customerName: sale.customerName,
+      customerDocumentType: sale.customerDocumentType,
+      customerDocumentNumber: sale.customerDocumentNumber,
     })
     .from(sale)
     .leftJoin(user, eq(user.id, sale.cashierId))
@@ -258,6 +307,15 @@ async function findExisting(
     igvCents: row.igvCents,
     totalCents: row.totalCents,
     cashierName: row.cashierName,
+    // Snapshot de la venta, nunca el cliente vivo
+    customer: row.customerName
+      ? {
+          id: row.customerId,
+          name: row.customerName,
+          documentType: row.customerDocumentType,
+          documentNumber: row.customerDocumentNumber,
+        }
+      : null,
     status: row.status,
     voidedAt: row.voidedAt?.toISOString() ?? null,
     voidReason: row.voidReason,

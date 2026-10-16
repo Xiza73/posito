@@ -19,6 +19,15 @@ describe('checkoutInputSchema', () => {
     expect(bad({ saleId: 'no-uuid' })).toBe(false)
   })
 
+  it('customerId es opcional (público general) y, si viene, debe ser un uuid', () => {
+    const ok = (over: object) => checkoutInputSchema.safeParse({ ...valid, ...over }).success
+    expect(ok({ customerId: ID })).toBe(true)
+    expect(ok({ customerId: null })).toBe(true)
+    expect(ok({ customerId: undefined })).toBe(true)
+    expect(ok({ customerId: 'juan' })).toBe(false)
+    expect(ok({ customerId: '' })).toBe(false)
+  })
+
   it('descarta campos que el cliente no debe decidir (precio, bodega, usuario)', () => {
     const parsed = checkoutInputSchema.parse({
       ...valid,

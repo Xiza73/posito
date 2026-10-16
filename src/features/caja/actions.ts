@@ -1,11 +1,14 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
+import { z } from 'zod'
+import { type CustomerOption, customerInputSchema } from '@/lib/customer-input'
+import { createCustomer, DuplicateDocumentError, searchActiveCustomers } from '@/lib/customers'
 import { db } from '@/lib/db'
 import { isNextControlFlow } from '@/lib/errors'
 import { can } from '@/lib/permissions'
 import type { SaleSummary } from '@/lib/receipt-lines'
-import { getCurrentMember } from '@/lib/session'
+import { ForbiddenError, getCurrentMember, requirePermission } from '@/lib/session'
 import { getSettings } from '@/lib/settings'
 import { CheckoutError, checkout, InsufficientStockError } from './data/checkout'
 import { checkoutInputSchema } from './lib/schemas'
@@ -48,5 +51,92 @@ export async function checkoutAction(input: unknown): Promise<CheckoutResult> {
     }
     console.error('[caja] cobro falló', e)
     return { ok: false, error: GENERIC_ERROR }
+  }
+}
+
+// --- Cliente de la venta (selector de la caja) ---
+
+export type SearchCustomersResult =
+  | { ok: true; customers: CustomerOption[] }
+  | { ok: false; error: string }
+
+const searchQuerySchema = z.string().trim().max(80)
+
+/**
+ * Clientes ACTIVOS de la bodega que coinciden con el texto (nombre sin tildes o documento).
+ * Cualquier miembro puede buscar; la bodega sale de la sesión. Máximo 8 resultados.
+ */
+export async function searchCustomersAction(query: unknown): Promise<SearchCustomersResult> {
+  const parsed = searchQuerySchema.safeParse(query)
+  if (!parsed.success) return { ok: false, error: 'La búsqueda no es válida' }
+
+  try {
+    const { organization } = await getCurrentMember()
+    const customers = await searchActiveCustomers(db, {
+      orgId: organization.id,
+      query: parsed.data,
+    })
+    return { ok: true, customers }
+  } catch (e) {
+    if (isNextControlFlow(e)) throw e
+    console.error('[caja] búsqueda de clientes falló', e instanceof Error ? e.name : 'error')
+    return { ok: false, error: 'No se pudo buscar clientes. Inténtalo de nuevo.' }
+  }
+}
+
+/** Valores crudos del alta rápida, para repoblar el formulario tras un error. */
+export type QuickCustomerValues = {
+  name: string
+  documentType: string
+  documentNumber: string
+  phone: string
+}
+
+export type QuickCustomerState = {
+  ok: boolean
+  customer?: CustomerOption
+  error?: string
+  fieldErrors?: Record<string, string[] | undefined>
+  values?: QuickCustomerValues
+}
+
+const formText = (formData: FormData, key: string) => {
+  const v = formData.get(key)
+  return typeof v === 'string' ? v : ''
+}
+
+/**
+ * Alta rápida desde la caja (nombre, documento opcional, teléfono) sin salir del cobro. Mismo
+ * esquema y misma inserción que Clientes (src/lib/customers.ts); exige `customer:create`.
+ */
+export async function quickCreateCustomerAction(
+  _prev: QuickCustomerState,
+  formData: FormData,
+): Promise<QuickCustomerState> {
+  const values: QuickCustomerValues = {
+    name: formText(formData, 'name'),
+    documentType: formText(formData, 'documentType'),
+    documentNumber: formText(formData, 'documentNumber'),
+    phone: formText(formData, 'phone'),
+  }
+  const parsed = customerInputSchema.safeParse(values)
+  if (!parsed.success) {
+    return { ok: false, values, fieldErrors: z.flattenError(parsed.error).fieldErrors }
+  }
+
+  try {
+    const { organization } = await getCurrentMember()
+    await requirePermission({ customer: ['create'] })
+    const customer = await createCustomer(db, { orgId: organization.id, input: parsed.data })
+    return { ok: true, customer }
+  } catch (e) {
+    if (isNextControlFlow(e)) throw e
+    if (e instanceof ForbiddenError) return { ok: false, values, error: e.message }
+    if (e instanceof DuplicateDocumentError) {
+      return { ok: false, values, fieldErrors: { documentNumber: [e.message] } }
+    }
+    // Sin datos personales en el registro
+    console.error('[caja] alta rápida de cliente falló', e instanceof Error ? e.name : 'error')
+    return { ok: false, values, error: 'No se pudo registrar el cliente. Inténtalo de nuevo.' }
   }
 }

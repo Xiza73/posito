@@ -92,15 +92,28 @@ export const customer = pgTable(
     id: id(),
     organizationId: orgId(),
     name: text().notNull(),
+    // Clave de búsqueda (src/lib/name-key.ts). SIN índice único: dos "Juan Pérez" pueden existir.
+    nameKey: text().notNull(),
+    // Documento normalizado (src/lib/document.ts); tipo y número van juntos o ninguno
     documentType: documentType(),
     documentNumber: text(),
     phone: text(),
+    email: text(),
+    address: text(),
+    // false = desactivado: no se borra (hay ventas que lo referencian) ni aparece en la caja
+    active: boolean().default(true).notNull(),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
   (t) => [
     index('customer_org_idx').on(t.organizationId),
-    uniqueIndex('customer_org_document_uq').on(t.organizationId, t.documentNumber),
+    index('customer_org_name_key_idx').on(t.organizationId, t.nameKey),
+    // Por tipo + número: un CE de 11 dígitos podría coincidir con un RUC y son personas distintas
+    uniqueIndex('customer_org_document_uq').on(t.organizationId, t.documentType, t.documentNumber),
+    check(
+      'customer_document_pair',
+      sql`(${t.documentType} is null) = (${t.documentNumber} is null)`,
+    ),
   ],
 )
 
@@ -117,6 +130,11 @@ export const sale = pgTable(
       .references(() => user.id, { onDelete: 'restrict' }),
     // null = "público general"
     customerId: uuid().references(() => customer.id, { onDelete: 'set null' }),
+    // Snapshot del cliente al cobrar (como sale_item.productName): editar el cliente después NO
+    // cambia lo impreso en las boletas pasadas. El nombre/documento SIEMPRE se leen de aquí.
+    customerName: text(),
+    customerDocumentType: documentType(),
+    customerDocumentNumber: text(),
     paymentMethod: paymentMethod().notNull(),
     // IGV incluido: subtotal + igv = total (ver features/caja/lib/totals.ts)
     subtotalCents: integer().notNull(),
@@ -141,6 +159,13 @@ export const sale = pgTable(
       sql`(${t.status} = 'anulada') = (${t.voidedAt} is not null and ${t.voidedById} is not null)`,
     ),
     check('sale_approval_consistent', sql`(${t.approvedAt} is null) = (${t.approvedById} is null)`),
+    // Con cliente hay snapshot de nombre. (customer_id puede quedar null si el cliente se borrara
+    // a mano: el snapshot sobrevive, por eso no es una igualdad.)
+    check('sale_customer_snapshot', sql`${t.customerId} is null or ${t.customerName} is not null`),
+    check(
+      'sale_customer_document_pair',
+      sql`(${t.customerDocumentType} is null) = (${t.customerDocumentNumber} is null)`,
+    ),
   ],
 )
 
