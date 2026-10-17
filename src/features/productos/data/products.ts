@@ -19,6 +19,8 @@ export type ProductRow = {
   stock: number
   minStock: number
   active: boolean
+  /** Base de la foto en Storage (src/lib/product-image.ts); null = sin foto. */
+  imagePath: string | null
   categoryId: string | null
   categoryName: string | null
 }
@@ -51,6 +53,7 @@ export async function listProducts(
       stock: product.stock,
       minStock: product.minStock,
       active: product.active,
+      imagePath: product.imagePath,
       categoryId: product.categoryId,
       categoryName: category.name,
     })
@@ -227,3 +230,42 @@ export async function deleteCategory(
     .returning({ id: category.id })
   return rows.length > 0
 }
+
+/** Base de la foto actual: undefined = el producto no existe en ESA bodega; null = sin foto. */
+export async function getProductImagePath(
+  db: Db,
+  { orgId, id }: { orgId: string; id: string },
+): Promise<string | null | undefined> {
+  const [row] = await db
+    .select({ imagePath: product.imagePath })
+    .from(product)
+    .where(and(eq(product.id, id), eq(product.organizationId, orgId)))
+    .limit(1)
+  return row ? row.imagePath : undefined
+}
+
+/**
+ * Fija (o quita, con null) la foto; solo `clearProductImage` es público: fijar pasa por consumeUploadAndSetImage del producto en una transacción y devuelve la base ANTERIOR
+ * para borrar sus objetos después del commit. null = el producto no existe en esa bodega.
+ */
+async function setProductImage(
+  db: Db,
+  { orgId, id, imagePath }: { orgId: string; id: string; imagePath: string | null },
+): Promise<{ previous: string | null } | null> {
+  return db.transaction(async (tx) => {
+    const [found] = await tx
+      .select({ imagePath: product.imagePath })
+      .from(product)
+      .where(and(eq(product.id, id), eq(product.organizationId, orgId)))
+      .for('update')
+    if (!found) return null
+    await tx
+      .update(product)
+      .set({ imagePath })
+      .where(and(eq(product.id, id), eq(product.organizationId, orgId)))
+    return { previous: found.imagePath }
+  })
+}
+
+export const clearProductImage = (db: Db, args: { orgId: string; id: string }) =>
+  setProductImage(db, { ...args, imagePath: null })

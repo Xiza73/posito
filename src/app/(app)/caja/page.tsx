@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { CajaScreen } from '@/features/caja/components/caja-screen'
 import { getCatalog } from '@/features/caja/data/catalog'
 import { can } from '@/lib/permissions'
+import { publicImageBase } from '@/lib/product-image'
 import { getCurrentMember } from '@/lib/session'
 
 export default async function CajaPage() {
@@ -31,6 +32,7 @@ export default async function CajaPage() {
     <CajaScreen
       products={products}
       categories={categories}
+      imageBase={publicImageBase(process.env.SUPABASE_URL)}
       canCreateCustomer={can(member.role, { customer: ['create'] })}
     />
   )

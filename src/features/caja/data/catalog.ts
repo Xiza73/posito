@@ -17,6 +17,7 @@ export async function getCatalog(organizationId: string): Promise<Catalog> {
       priceCents: product.priceCents,
       stock: product.stock,
       tracksStock: product.tracksStock,
+      imagePath: product.imagePath,
     })
     .from(product)
     .leftJoin(category, eq(category.id, product.categoryId))

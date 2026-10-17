@@ -25,9 +25,11 @@ type Props = {
   categories: string[]
   /** `customer:create`: habilita el alta rápida de clientes en el selector. */
   canCreateCustomer: boolean
+  /** Base pública de las fotos (publicImageBase) o null. */
+  imageBase: string | null
 }
 
-export function CajaScreen({ products, categories, canCreateCustomer }: Props) {
+export function CajaScreen({ products, categories, canCreateCustomer, imageBase }: Props) {
   const [query, setQuery] = useState('')
   const [category, setCategory] = useState<string | null>(null)
   const [cart, setCart] = useState<Cart>({})
@@ -137,7 +139,7 @@ export function CajaScreen({ products, categories, canCreateCustomer }: Props) {
           ) : (
             <div className="grid grid-cols-[repeat(auto-fill,minmax(140px,1fr))] gap-3">
               {visible.map((item) => (
-                <ProductCard key={item.id} item={item} onAdd={add} />
+                <ProductCard key={item.id} item={item} imageBase={imageBase} onAdd={add} />
               ))}
             </div>
           )}

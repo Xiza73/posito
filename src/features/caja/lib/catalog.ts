@@ -8,6 +8,8 @@ export type CatalogProduct = {
   stock: number
   /** false = se prepara al momento (ej. café pasado): sin límite de stock. */
   tracksStock: boolean
+  /** Base de la foto en Storage (src/lib/product-image.ts); null = sin foto. */
+  imagePath: string | null
 }
 
 export function isSoldOut(p: Pick<CatalogProduct, 'tracksStock' | 'stock'>): boolean {
