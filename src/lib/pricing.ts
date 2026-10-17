@@ -3,7 +3,7 @@
 // Todo en céntimos enteros.
 
 /** Valores de `sale_item.price_source` (text + CHECK, no enum: ver CLAUDE.md §7). */
-export type PriceSource = 'normal' | 'mayor'
+export type PriceSource = 'normal' | 'mayor' | 'manual'
 
 export type PriceTier = { minQty: number; unitPriceCents: number }
 
@@ -70,4 +70,37 @@ export function validateTiers(basePriceCents: number, tiers: readonly PriceTier[
     }
   })
   return errors
+}
+
+export type ResolvedLine = {
+  /** Con `source === 'manual'` es INFORMATIVO: `floor(total / qty)`; el importe real es `lineTotalCents`. */
+  unitPriceCents: number
+  lineTotalCents: number
+  source: PriceSource
+  /** Nivel aplicado (solo si `source === 'mayor'`). */
+  tier?: { minQty: number }
+}
+
+/**
+ * Precio de una línea. Un total manual (editado en la Caja) REEMPLAZA al precio normal y al por
+ * mayor: el importe es lo escrito y el unitario se guarda como `floor(total / qty)` solo a modo
+ * informativo (la línea ya no cumple `unit × qty = total`, por eso el CHECK exceptúa 'manual').
+ */
+export function resolveLine(
+  input: { basePriceCents: number; tiers: readonly PriceTier[] },
+  qty: number,
+  manualTotalCents?: number | null,
+): ResolvedLine {
+  const auto = unitPriceFor(input, qty)
+  const autoTotal = auto.unitPriceCents * qty
+  const automatic: ResolvedLine = { ...auto, lineTotalCents: autoTotal }
+  if (manualTotalCents === undefined || manualTotalCents === null) return automatic
+  // Normalización: un "total manual" igual al automático no es una edición; se cobra como
+  // normal/mayor para no marcar ventas como editadas sin diferencia real.
+  if (manualTotalCents === autoTotal) return automatic
+  return {
+    unitPriceCents: Math.floor(manualTotalCents / qty),
+    lineTotalCents: manualTotalCents,
+    source: 'manual',
+  }
 }

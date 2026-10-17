@@ -27,6 +27,10 @@ export const settingsSchema = z.object({
 
 export type SettingsInput = z.output<typeof settingsSchema>
 
+export const manualPriceSchema = z.object({
+  allowManualPrice: z.boolean(),
+})
+
 export const BUSINESS_LIMITS = {
   tradeName: 80,
   legalName: 120,

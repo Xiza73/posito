@@ -7,6 +7,7 @@ import { beforeAll, describe, expect, it } from 'vitest'
 import * as schema from '@/db/schema'
 import type { PaymentMethod } from '@/lib/payment'
 import { updateBusinessProfile } from '@/lib/settings'
+import { toCsv } from '../lib/csv'
 import { PAGE_SIZE, type SalesFilters } from '../lib/filters'
 import {
   approveSale,
@@ -69,7 +70,14 @@ type Fixture = {
   cashierId?: string
   createdAt?: Date
   method?: PaymentMethod
-  items?: { productId: string; qty: number; unitPriceCents?: number; name?: string }[]
+  items?: {
+    productId: string
+    qty: number
+    unitPriceCents?: number
+    name?: string
+    /** Línea con precio editado a mano: importe cobrado (el normal es unitPriceCents). */
+    manualTotalCents?: number
+  }[]
   /** Inserta los movimientos 'venta' (lo normal). */
   movements?: boolean
   /** 'pendiente' = esperando validación (descuenta stock igual). */
@@ -84,7 +92,7 @@ async function insertSale(f: Fixture = {}): Promise<string> {
   const priced = items.map((i) => ({
     ...i,
     unit: i.unitPriceCents ?? 300,
-    total: (i.unitPriceCents ?? 300) * i.qty,
+    total: i.manualTotalCents ?? (i.unitPriceCents ?? 300) * i.qty,
   }))
   const total = priced.reduce((a, i) => a + i.total, 0)
   const igv = total - Math.round(total / 1.18)
@@ -107,8 +115,9 @@ async function insertSale(f: Fixture = {}): Promise<string> {
       saleId: id,
       productId: i.productId,
       productName: i.name ?? 'Inca Kola',
-      unitPriceCents: i.unit,
+      unitPriceCents: i.manualTotalCents === undefined ? i.unit : Math.floor(i.total / i.qty),
       listUnitPriceCents: i.unit,
+      priceSource: i.manualTotalCents === undefined ? ('normal' as const) : ('manual' as const),
       quantity: i.qty,
       lineTotalCents: i.total,
     })),
@@ -957,5 +966,85 @@ describe('getSale: datos del negocio', () => {
     const detail = await getSale(db, { orgId: ORG_A, viewer: admin, id })
     expect(detail?.business.tradeName).toBe('Perfil Vigente')
     expect(detail?.business.receiptFooter).toBe('Gracias por su compra')
+  })
+})
+
+describe('precio editado: filtro, marca, CSV', () => {
+  const day = range('2031-03-10')
+  const when = at('2031-03-10T10:00')
+  const p = () => newProduct()
+  let plain: string
+  let discount: string
+  let surcharge: string
+  let luisEdited: string
+
+  beforeAll(async () => {
+    plain = await insertSale({ createdAt: when, items: [{ productId: await p(), qty: 1 }] })
+    // 2 × 3.00 = 6.00 normal, cobrado 4.50 -> descuento 1.50
+    discount = await insertSale({
+      createdAt: when,
+      items: [
+        { productId: await p(), qty: 2, manualTotalCents: 450 },
+        { productId: await p(), qty: 1 },
+      ],
+    })
+    // 1 × 3.00, cobrado 5.00 -> cobrado de más (-2.00)
+    surcharge = await insertSale({
+      createdAt: when,
+      items: [{ productId: await p(), qty: 1, manualTotalCents: 500 }],
+    })
+    luisEdited = await insertSale({
+      createdAt: when,
+      cashierId: LUIS,
+      items: [{ productId: await p(), qty: 1, manualTotalCents: 100 }],
+    })
+  })
+
+  it('el filtro "con precio editado" deja solo las ventas con líneas manuales', async () => {
+    const all = await listSales(db, scope(day))
+    expect(all.rows).toHaveLength(4)
+    const edited = await listSales(db, scope({ ...day, edited: true }))
+    expect(edited.rows.map((r) => r.id).sort()).toEqual([discount, luisEdited, surcharge].sort())
+    const sum = await salesSummary(db, scope({ ...day, edited: true }))
+    expect(sum.count).toBe(3)
+  })
+
+  it('cada fila lleva la marca hasManualPrice', async () => {
+    const { rows } = await listSales(db, scope(day))
+    const flag = Object.fromEntries(rows.map((r) => [r.id, r.hasManualPrice]))
+    expect(flag).toEqual({
+      [plain]: false,
+      [discount]: true,
+      [surcharge]: true,
+      [luisEdited]: true,
+    })
+  })
+
+  it('el cajero solo ve lo suyo también con el filtro (y no ve ventas ajenas editadas)', async () => {
+    const mine = await listSales(db, scope({ ...day, edited: true }, ana))
+    expect(mine.rows.map((r) => r.id).sort()).toEqual([discount, surcharge].sort())
+    const ex = await exportRows(db, scope({ ...day, edited: true }, ana))
+    expect(ex.rows).toHaveLength(2)
+  })
+
+  it('otra bodega no ve estas ventas', async () => {
+    const other = await listSales(db, scope({ ...day, edited: true }, admin, ORG_B))
+    expect(other.rows).toEqual([])
+  })
+
+  it('el CSV agrega "Precio editado" y "Diferencia" (positivo = descuento)', async () => {
+    const { rows } = await exportRows(db, scope(day))
+    const csv = toCsv(rows).split('\r\n')
+    expect(csv[0]).toMatch(/,Precio editado,Diferencia$/)
+    const nums = Object.fromEntries(rows.map((r) => [r.priceDifferenceCents, r.priceEdited]))
+    expect(nums).toMatchObject({ 150: true, '-200': true, 0: false })
+    const discountRow = rows.find((r) => r.priceDifferenceCents === 150)
+    const surchargeRow = rows.find((r) => r.priceDifferenceCents === -200)
+    expect(discountRow?.priceEdited).toBe(true)
+    expect(surchargeRow?.priceEdited).toBe(true)
+    expect(csv.some((l) => l.endsWith(',Sí,1.50'))).toBe(true)
+    // El negativo pasa por la guarda anti-fórmulas (prefijo ')
+    expect(csv.some((l) => l.endsWith(",Sí,'-2.00"))).toBe(true)
+    expect(csv.some((l) => l.endsWith(',No,'))).toBe(true)
   })
 })

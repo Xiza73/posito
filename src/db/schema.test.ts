@@ -100,6 +100,53 @@ describe('esquema: restricciones de integridad', () => {
     ).rejects.toThrow()
   })
 
+  describe('líneas de venta (sale_item)', () => {
+    async function line(over: Partial<typeof schema.saleItem.$inferInsert>) {
+      const num = Math.floor(Math.random() * 1e6) + 1000
+      const [s] = await sale({ number: num }).returning({ id: schema.sale.id })
+      return db.insert(schema.saleItem).values({
+        saleId: s.id,
+        productId,
+        productName: 'Inca Kola 500 ml',
+        unitPriceCents: 300,
+        listUnitPriceCents: 300,
+        priceSource: 'normal',
+        quantity: 3,
+        lineTotalCents: 900,
+        ...over,
+      })
+    }
+
+    it('una línea normal cuyo importe no es unitario × cantidad se rechaza', async () => {
+      await expect(line({ lineTotalCents: 1000 })).rejects.toThrow()
+      await expect(line({ priceSource: 'mayor', unitPriceCents: 250 })).rejects.toThrow()
+      await expect(line({})).resolves.toBeDefined()
+    })
+
+    it('una línea manual acepta un total no divisible entre la cantidad (unitario = floor)', async () => {
+      await expect(
+        line({ priceSource: 'manual', unitPriceCents: 333, lineTotalCents: 1000 }),
+      ).resolves.toBeDefined()
+      // Hacia arriba del precio de lista también vale
+      await expect(
+        line({ priceSource: 'manual', unitPriceCents: 400, lineTotalCents: 1201 }),
+      ).resolves.toBeDefined()
+    })
+
+    it('una línea manual exige un importe de al menos 1 céntimo', async () => {
+      await expect(
+        line({ priceSource: 'manual', unitPriceCents: 0, lineTotalCents: 0 }),
+      ).rejects.toThrow()
+      await expect(
+        line({ priceSource: 'manual', unitPriceCents: 0, lineTotalCents: 1, quantity: 5 }),
+      ).resolves.toBeDefined()
+    })
+
+    it('price_source solo admite normal, mayor o manual', async () => {
+      await expect(line({ priceSource: 'otro' as 'manual', lineTotalCents: 900 })).rejects.toThrow()
+    })
+  })
+
   it('permite varios productos sin código de barras', async () => {
     await expect(
       db.insert(schema.product).values([

@@ -16,6 +16,7 @@ describe('parseSalesSearchParams', () => {
         cashierId: undefined,
         productId: undefined,
         receipt: undefined,
+        edited: undefined,
       },
       page: 1,
     })
@@ -118,5 +119,19 @@ describe('salesQueryString / exportFileName / quickRanges', () => {
     expect(hoy).toMatchObject({ from: '2026-10-14', to: '2026-10-14' })
     expect(sem).toMatchObject({ from: '2026-10-08', to: '2026-10-14' })
     expect(mes).toMatchObject({ from: '2026-10-01', to: '2026-10-14' })
+  })
+})
+
+describe('filtro editado', () => {
+  it('editado=1 activa el filtro; cualquier otro valor se descarta', () => {
+    expect(parseSalesSearchParams({ editado: '1' }, NOW).filters.edited).toBe(true)
+    expect(parseSalesSearchParams({ editado: '0' }, NOW).filters.edited).toBeUndefined()
+    expect(parseSalesSearchParams({ editado: 'x' }, NOW).filters.edited).toBeUndefined()
+  })
+
+  it('salesQueryString lo conserva solo si está activo', () => {
+    const base = { from: '2026-10-14', to: '2026-10-14' }
+    expect(salesQueryString({ ...base, edited: true })).toContain('editado=1')
+    expect(salesQueryString(base)).not.toContain('editado')
   })
 })

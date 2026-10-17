@@ -262,6 +262,8 @@ export const organizationSettings = pgTable('organization_settings', {
     .references(() => organization.id, { onDelete: 'cascade' }),
   // true = las ventas de los cajeros quedan 'pendiente' hasta que un admin las apruebe
   requireSaleApproval: boolean().default(false).notNull(),
+  // true = cualquier rol puede editar el TOTAL de una línea en la Caja (precio 'manual')
+  allowManualPrice: boolean().default(false).notNull(),
   // Datos del negocio (todos opcionales; los valores por defecto se resuelven en
   // lib/settings.ts: tradeName vacío = nombre de la organization, receiptFooter vacío = agradecimiento)
   tradeName: text(),
@@ -310,22 +312,31 @@ export const saleItem = pgTable(
     unitPriceCents: integer().notNull(),
     // Snapshot del precio normal del producto al vender; con `unitPriceCents` da el ahorro por mayor
     listUnitPriceCents: integer().notNull(),
-    // Origen del precio. text + CHECK a propósito (NO pgEnum): la próxima función agrega 'manual' y un
-    // valor nuevo de enum no se puede usar en la misma transacción de migración (55P04, CLAUDE.md §7);
-    // con text basta ampliar el CHECK.
+    // Origen del precio. text + CHECK a propósito (NO pgEnum): un valor nuevo de enum no se puede usar
+    // en la misma transacción de migración (55P04, CLAUDE.md §7); con text basta ampliar el CHECK.
+    // 'manual' = total editado en la Caja: `lineTotalCents` es lo escrito y `unitPriceCents` es
+    // floor(total / cantidad), solo informativo.
     priceSource: text().$type<PriceSource>().default('normal').notNull(),
     quantity: integer().notNull(),
     lineTotalCents: integer().notNull(),
   },
   (t) => [
     index('sale_item_sale_idx').on(t.saleId),
-    check('sale_item_price_source', sql`${t.priceSource} in ('normal', 'mayor')`),
+    check('sale_item_price_source', sql`${t.priceSource} in ('normal', 'mayor', 'manual')`),
     check(
       'sale_item_price_source_consistent',
       sql`(${t.priceSource} <> 'normal' or ${t.unitPriceCents} = ${t.listUnitPriceCents}) and (${t.priceSource} <> 'mayor' or ${t.unitPriceCents} < ${t.listUnitPriceCents})`,
     ),
     check('sale_item_quantity_positive', sql`${t.quantity} > 0`),
-    check('sale_item_line_total', sql`${t.lineTotalCents} = ${t.unitPriceCents} * ${t.quantity}`),
+    // Manual: el importe es lo escrito (puede no ser múltiplo de la cantidad)
+    check(
+      'sale_item_line_total',
+      sql`${t.priceSource} = 'manual' or ${t.lineTotalCents} = ${t.unitPriceCents} * ${t.quantity}`,
+    ),
+    check(
+      'sale_item_manual_total_positive',
+      sql`${t.priceSource} <> 'manual' or ${t.lineTotalCents} >= 1`,
+    ),
   ],
 )
 

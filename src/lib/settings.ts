@@ -15,13 +15,21 @@ import type { Db } from '@/lib/db-types'
 export type OrganizationSettings = {
   /** Las ventas de los cajeros quedan 'pendiente' hasta que un admin las apruebe. */
   requireSaleApproval: boolean
+  /** Cualquier rol puede editar el total de una línea en la Caja (precio manual, queda registrado). */
+  allowManualPrice: boolean
 }
 
-export const DEFAULT_SETTINGS: OrganizationSettings = { requireSaleApproval: false }
+export const DEFAULT_SETTINGS: OrganizationSettings = {
+  requireSaleApproval: false,
+  allowManualPrice: false,
+}
 
 export async function getSettings(db: Db, orgId: string): Promise<OrganizationSettings> {
   const [row] = await db
-    .select({ requireSaleApproval: organizationSettings.requireSaleApproval })
+    .select({
+      requireSaleApproval: organizationSettings.requireSaleApproval,
+      allowManualPrice: organizationSettings.allowManualPrice,
+    })
     .from(organizationSettings)
     .where(eq(organizationSettings.organizationId, orgId))
   return row ?? DEFAULT_SETTINGS
@@ -29,12 +37,13 @@ export async function getSettings(db: Db, orgId: string): Promise<OrganizationSe
 
 /**
  * Upsert atómico de los ajustes de la bodega (acotado por `orgId`, que sale de la sesión).
- * Solo toca `requireSaleApproval`: no pisa los datos del negocio.
+ * Solo toca las claves recibidas (cada tarjeta de Configuración guarda la suya): no pisa los otros
+ * ajustes ni los datos del negocio.
  */
 export async function updateSettings(
   db: Db,
   orgId: string,
-  settings: OrganizationSettings,
+  settings: Partial<OrganizationSettings>,
 ): Promise<void> {
   await db
     .insert(organizationSettings)
@@ -112,4 +121,25 @@ export async function snapshotOrCurrent(
   raw: unknown,
 ): Promise<BusinessSnapshot> {
   return parseSnapshot(raw) ?? toSnapshot(await getBusinessProfile(db, orgId))
+}
+
+/**
+ * Ajustes leídos DENTRO de la transacción del cobro con `FOR SHARE`: mientras el cobro no confirma,
+ * nadie puede apagar `allowManualPrice` (el UPDATE de `updateSettings` espera), así que la decisión
+ * "se permite precio manual" no puede cambiar entre la lectura y el commit. Sin fila = por defecto
+ * (apagado). Orden de bloqueos del cobro: productos (`ORDER BY id`) -> ajustes -> `receipt_series`.
+ * `updateSettings` solo toca `organization_settings` (no toma productos ni `receipt_series`), así
+ * que no puede cerrar un ciclo con el cobro. Si no hay fila no hay nada que bloquear: el upsert
+ * posterior que la cree no cambia el valor efectivo (sigue apagado hasta que alguien la guarde).
+ */
+export async function getSettingsForCheckout(tx: Db, orgId: string): Promise<OrganizationSettings> {
+  const [row] = await tx
+    .select({
+      requireSaleApproval: organizationSettings.requireSaleApproval,
+      allowManualPrice: organizationSettings.allowManualPrice,
+    })
+    .from(organizationSettings)
+    .where(eq(organizationSettings.organizationId, orgId))
+    .for('share')
+  return row ?? DEFAULT_SETTINGS
 }

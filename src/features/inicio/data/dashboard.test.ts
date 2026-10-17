@@ -52,14 +52,21 @@ type Fixture = {
   status?: 'completada' | 'pendiente' | 'anulada'
   /** Importe total; si hay `items` se deriva de ellos. */
   totalCents?: number
-  items?: { productId: string; qty: number; unitPriceCents: number; name: string }[]
+  items?: {
+    productId: string
+    qty: number
+    unitPriceCents: number
+    name: string
+    /** Línea con precio editado: importe cobrado (el normal es unitPriceCents × qty). */
+    manualTotalCents?: number
+  }[]
 }
 
 async function insertSale(f: Fixture): Promise<string> {
   const orgId = f.orgId ?? ORG_A
   const items = f.items ?? []
   const total = items.length
-    ? items.reduce((a, i) => a + i.unitPriceCents * i.qty, 0)
+    ? items.reduce((a, i) => a + (i.manualTotalCents ?? i.unitPriceCents * i.qty), 0)
     : (f.totalCents ?? 1000)
   const igv = total - Math.round(total / 1.18)
   const id = crypto.randomUUID()
@@ -86,10 +93,14 @@ async function insertSale(f: Fixture): Promise<string> {
         saleId: id,
         productId: i.productId,
         productName: i.name,
-        unitPriceCents: i.unitPriceCents,
+        unitPriceCents:
+          i.manualTotalCents === undefined
+            ? i.unitPriceCents
+            : Math.floor(i.manualTotalCents / i.qty),
         listUnitPriceCents: i.unitPriceCents,
+        priceSource: i.manualTotalCents === undefined ? ('normal' as const) : ('manual' as const),
         quantity: i.qty,
-        lineTotalCents: i.unitPriceCents * i.qty,
+        lineTotalCents: i.manualTotalCents ?? i.unitPriceCents * i.qty,
       })),
     )
   }
@@ -524,5 +535,62 @@ describe('getDashboard: alertas', () => {
     await insertSale({ orgId: org, createdAt: at('2026-10-14T11:00:00'), status: 'anulada' })
     expect((await dash('hoy', admin, org)).voidedCount).toBe(2)
     expect((await dash('7d', admin, org)).voidedCount).toBe(3)
+  })
+})
+
+describe('getDashboard: precios editados', () => {
+  it('cuenta ventas completadas y por validar con líneas manuales y su diferencia neta; excluye anuladas y otros períodos', async () => {
+    const org = await freshOrg()
+    const prod = await newProduct({}, org)
+    const day = at('2026-10-15T10:00:00')
+    const edit = (manualTotalCents: number, qty = 2) => ({
+      productId: prod,
+      qty,
+      unitPriceCents: 300,
+      name: 'Inca Kola',
+      manualTotalCents,
+    })
+    // descuento 1.50
+    await insertSale({ orgId: org, createdAt: day, items: [edit(450)] })
+    // cobrado de más: 2.00 (por validar también cuenta)
+    await insertSale({
+      orgId: org,
+      createdAt: day,
+      status: 'pendiente',
+      cashierId: LUIS,
+      items: [edit(800, 2)],
+    })
+    // anulada: no cuenta
+    await insertSale({ orgId: org, createdAt: day, status: 'anulada', items: [edit(100)] })
+    // otro día: fuera de "hoy"
+    await insertSale({ orgId: org, createdAt: at('2026-10-10T10:00:00'), items: [edit(100)] })
+    // sin edición: no cuenta
+    await insertSale({
+      orgId: org,
+      createdAt: day,
+      items: [{ productId: prod, qty: 1, unitPriceCents: 300, name: 'Inca Kola' }],
+    })
+
+    const d = await dash('hoy', admin, org)
+    expect(d.editedPrices).toEqual({ count: 2, differenceCents: 150 - 200 })
+    const o = await dash('hoy', owner, org)
+    expect(o.editedPrices).toEqual({ count: 2, differenceCents: -50 })
+  })
+
+  it('el cajero no ve la tarjeta (null)', async () => {
+    const org = await freshOrg()
+    const prod = await newProduct({}, org)
+    await insertSale({
+      orgId: org,
+      createdAt: at('2026-10-15T10:00:00'),
+      cashierId: ANA,
+      items: [{ productId: prod, qty: 2, unitPriceCents: 300, name: 'X', manualTotalCents: 450 }],
+    })
+    expect((await dash('hoy', ana, org)).editedPrices).toBeNull()
+  })
+
+  it('sin ediciones: count 0 y diferencia 0', async () => {
+    const org = await freshOrg()
+    expect((await dash('hoy', admin, org)).editedPrices).toEqual({ count: 0, differenceCents: 0 })
   })
 })

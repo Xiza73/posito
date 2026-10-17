@@ -1,5 +1,6 @@
 import { NoPermission } from '@/components/ui/no-permission'
 import { BusinessProfileForm } from '@/features/configuracion/components/business-profile-form'
+import { ManualPriceForm } from '@/features/configuracion/components/manual-price-form'
 import { ReceiptSeriesForm } from '@/features/configuracion/components/receipt-series-form'
 import { SaleApprovalForm } from '@/features/configuracion/components/sale-approval-form'
 import { getReceiptSeries } from '@/features/configuracion/data/receipt-series'
@@ -24,6 +25,7 @@ export default async function ConfiguracionPage() {
       <BusinessProfileForm profile={profile} />
       <ReceiptSeriesForm series={series} nextNumber={nextNumber} />
       <SaleApprovalForm requireSaleApproval={settings.requireSaleApproval} />
+      <ManualPriceForm allowManualPrice={settings.allowManualPrice} />
       <p className="max-w-3xl text-muted text-sm">
         El tema (Cielo o Café) se cambia desde el encabezado.
       </p>

@@ -5,10 +5,12 @@ export const IGV_RATE = 0.18
 export type Line = {
   unitPriceCents: number
   qty: number
+  /** Importe de la línea cuando no es unitario × cantidad (precio editado a mano en la Caja). */
+  totalCents?: number
 }
 
 export function lineTotalCents(line: Line): number {
-  return line.unitPriceCents * line.qty
+  return line.totalCents ?? line.unitPriceCents * line.qty
 }
 
 /** Total a cobrar (IGV incluido). */

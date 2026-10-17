@@ -10,7 +10,13 @@ import { can } from '@/lib/permissions'
 import type { SaleSummary } from '@/lib/receipt-lines'
 import { ForbiddenError, getCurrentMember, requirePermission } from '@/lib/session'
 import { getSettings } from '@/lib/settings'
-import { CheckoutError, checkout, InsufficientStockError, PriceChangedError } from './data/checkout'
+import {
+  CheckoutError,
+  checkout,
+  InsufficientStockError,
+  ManualPriceDisabledError,
+  PriceChangedError,
+} from './data/checkout'
 import { checkoutInputSchema } from './lib/schemas'
 
 export type CheckoutResult = { ok: true; sale: SaleSummary } | { ok: false; error: string }
@@ -46,8 +52,12 @@ export async function checkoutAction(input: unknown): Promise<CheckoutResult> {
     if (isNextControlFlow(e)) throw e
     if (e instanceof CheckoutError) {
       // El stock cambió desde que se cargó la caja: refresca el catálogo para que el tope se actualice
-      // Ídem si cambiaron precios o niveles por mayor
-      if (e instanceof InsufficientStockError || e instanceof PriceChangedError) {
+      // Ídem si cambiaron precios, niveles por mayor o se apagó la edición de precios
+      if (
+        e instanceof InsufficientStockError ||
+        e instanceof PriceChangedError ||
+        e instanceof ManualPriceDisabledError
+      ) {
         revalidatePath('/caja')
       }
       return { ok: false, error: e.message }

@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { formatCents } from '@/lib/format'
 import type { StockAlert } from '../data/dashboard'
 
 const ROW =
@@ -39,12 +40,24 @@ type Props = {
   voidedCount: number
   pendingHref: string
   voidedHref: string
+  /** null = el rol no ve esta tarjeta (cajero). */
+  editedPrices?: { count: number; differenceCents: number } | null
+  editedHref?: string
 }
 
 /** Lo que pide atención: stock (de toda la bodega), ventas por validar y anuladas del período. */
-export function Alerts({ stock, pendingCount, voidedCount, pendingHref, voidedHref }: Props) {
+export function Alerts({
+  stock,
+  pendingCount,
+  voidedCount,
+  pendingHref,
+  voidedHref,
+  editedPrices = null,
+  editedHref = '/ventas?editado=1',
+}: Props) {
+  const edited = editedPrices && editedPrices.count > 0 ? editedPrices : null
   const nothing =
-    stock.low.count === 0 && stock.out.count === 0 && !pendingCount && voidedCount === 0
+    stock.low.count === 0 && stock.out.count === 0 && !pendingCount && voidedCount === 0 && !edited
   return (
     <section className="rounded-card border border-line bg-surface p-4 md:p-5">
       <h3 className="font-semibold">Requiere atención</h3>
@@ -69,6 +82,24 @@ export function Alerts({ stock, pendingCount, voidedCount, pendingHref, voidedHr
               <Link href={pendingHref} className={ROW}>
                 <span className="font-medium text-warn">
                   {pendingCount} {pendingCount === 1 ? 'venta por validar' : 'ventas por validar'}
+                </span>
+              </Link>
+            </li>
+          ) : null}
+          {edited ? (
+            <li>
+              <Link href={editedHref} className={ROW}>
+                <span className="font-medium text-warn">
+                  {edited.count}{' '}
+                  {edited.count === 1 ? 'venta con precio editado' : 'ventas con precio editado'}
+                </span>
+                <span className="text-muted text-xs">
+                  Diferencia neta {formatCents(Math.abs(edited.differenceCents))}
+                  {edited.differenceCents > 0
+                    ? ' de descuento'
+                    : edited.differenceCents < 0
+                      ? ' cobrado de más'
+                      : ''}
                 </span>
               </Link>
             </li>

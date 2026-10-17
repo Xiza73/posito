@@ -24,6 +24,10 @@ type Props = {
   onClose: () => void
   onPay: (method: PaymentMethod) => void
   onChangeQty: (key: string, delta: 1 | -1) => void
+  allowManualPrice: boolean
+  onSetManual: (id: string, cents: number | null) => void
+  /** Ticket congelado: tampoco se editan precios. */
+  locked: boolean
   onCharge: () => void
 }
 
@@ -44,6 +48,9 @@ export function MobileCart({
   onClose,
   onPay,
   onChangeQty,
+  allowManualPrice,
+  onSetManual,
+  locked,
   onCharge,
 }: Props) {
   useEffect(() => {
@@ -71,7 +78,9 @@ export function MobileCart({
             <span>
               Ver ticket · {count} {count === 1 ? 'artículo' : 'artículos'}
             </span>
-            <span className="font-mono">{total}</span>
+            <span className="font-mono" aria-live="polite">
+              {total}
+            </span>
           </button>
         </div>
       )}
@@ -102,7 +111,14 @@ export function MobileCart({
               className="mx-5 mb-2"
             />
             <div className="flex-1 overflow-auto px-5">
-              <TicketLines lines={lines} onChangeQty={onChangeQty} large />
+              <TicketLines
+                lines={lines}
+                onChangeQty={onChangeQty}
+                allowManualPrice={allowManualPrice}
+                onSetManual={onSetManual}
+                locked={locked || pending}
+                large
+              />
             </div>
             <div className="flex flex-col gap-3 border-line border-t px-5 pt-3.5 pb-6">
               <PaymentMethods value={pay} onChange={onPay} />
