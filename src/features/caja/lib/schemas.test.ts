@@ -2,7 +2,12 @@ import { describe, expect, it } from 'vitest'
 import { checkoutInputSchema } from './schemas'
 
 const ID = '0b6f2d3e-5c1a-4f7e-9a3b-1c2d3e4f5a6b'
-const valid = { saleId: ID, paymentMethod: 'efectivo', items: [{ productId: ID, quantity: 2 }] }
+const valid = {
+  saleId: ID,
+  paymentMethod: 'efectivo',
+  expectedTotalCents: 600,
+  items: [{ productId: ID, quantity: 2 }],
+}
 
 describe('checkoutInputSchema', () => {
   it('acepta una venta válida', () => {
@@ -17,6 +22,15 @@ describe('checkoutInputSchema', () => {
     expect(bad({ items: [{ productId: ID, quantity: 1.5 }] })).toBe(false)
     expect(bad({ paymentMethod: 'cripto' })).toBe(false)
     expect(bad({ saleId: 'no-uuid' })).toBe(false)
+  })
+
+  it('expectedTotalCents es obligatorio, entero y >= 0', () => {
+    const ok = (over: object) => checkoutInputSchema.safeParse({ ...valid, ...over }).success
+    expect(ok({ expectedTotalCents: 0 })).toBe(true)
+    expect(ok({ expectedTotalCents: undefined })).toBe(false)
+    expect(ok({ expectedTotalCents: -1 })).toBe(false)
+    expect(ok({ expectedTotalCents: 1.5 })).toBe(false)
+    expect(ok({ expectedTotalCents: '600' })).toBe(false)
   })
 
   it('customerId es opcional (público general) y, si viene, debe ser un uuid', () => {

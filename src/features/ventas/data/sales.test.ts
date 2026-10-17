@@ -108,6 +108,7 @@ async function insertSale(f: Fixture = {}): Promise<string> {
       productId: i.productId,
       productName: i.name ?? 'Inca Kola',
       unitPriceCents: i.unit,
+      listUnitPriceCents: i.unit,
       quantity: i.qty,
       lineTotalCents: i.total,
     })),

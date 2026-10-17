@@ -10,7 +10,7 @@ import { can } from '@/lib/permissions'
 import type { SaleSummary } from '@/lib/receipt-lines'
 import { ForbiddenError, getCurrentMember, requirePermission } from '@/lib/session'
 import { getSettings } from '@/lib/settings'
-import { CheckoutError, checkout, InsufficientStockError } from './data/checkout'
+import { CheckoutError, checkout, InsufficientStockError, PriceChangedError } from './data/checkout'
 import { checkoutInputSchema } from './lib/schemas'
 
 export type CheckoutResult = { ok: true; sale: SaleSummary } | { ok: false; error: string }
@@ -46,7 +46,10 @@ export async function checkoutAction(input: unknown): Promise<CheckoutResult> {
     if (isNextControlFlow(e)) throw e
     if (e instanceof CheckoutError) {
       // El stock cambió desde que se cargó la caja: refresca el catálogo para que el tope se actualice
-      if (e instanceof InsufficientStockError) revalidatePath('/caja')
+      // Ídem si cambiaron precios o niveles por mayor
+      if (e instanceof InsufficientStockError || e instanceof PriceChangedError) {
+        revalidatePath('/caja')
+      }
       return { ok: false, error: e.message }
     }
     console.error('[caja] cobro falló', e)

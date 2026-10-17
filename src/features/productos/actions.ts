@@ -39,7 +39,7 @@ import {
   discardImageUpload,
   hasPendingUpload,
 } from './data/image-uploads'
-import { commitImport, previewImport } from './data/import'
+import { commitImport, ImportConflictError, previewImport } from './data/import'
 import {
   clearProductImage,
   createCategory,
@@ -51,7 +51,7 @@ import {
 } from './data/products'
 import { IMPORT_MAX_ROWS, type RawImportRow } from './lib/import-parse'
 import type { ImportPreview, ImportSummary } from './lib/import-validate'
-import { categoryNameSchema, idSchema, productInputSchema } from './lib/schemas'
+import { categoryNameSchema, idSchema, productInputSchema, type TierRow } from './lib/schemas'
 
 /** Valores crudos del formulario de producto, para repoblarlo tras un error. */
 export type ProductFormValues = {
@@ -62,6 +62,7 @@ export type ProductFormValues = {
   tracksStock: boolean
   initialStock: string
   minStock: string
+  tiers: TierRow[]
 }
 
 export type FormState = {
@@ -126,7 +127,23 @@ function toErrorState(
   return { ok: false, values, error: GENERIC_ERROR }
 }
 
+/** Filas del "Precio por mayor": campos repetidos `tierMinQty` / `tierPrice`, emparejados por posición. */
+function readTiers(formData: FormData): { rows: TierRow[]; mismatch: boolean } {
+  const qtys = formData.getAll('tierMinQty')
+  const prices = formData.getAll('tierPrice')
+  const str = (v: FormDataEntryValue | undefined) => (typeof v === 'string' ? v : '')
+  // Emparejar por posición solo es seguro si hay el mismo número de cantidades y precios
+  return {
+    rows: qtys.map((q, i) => ({ minQty: str(q), price: str(prices[i]) })),
+    mismatch: qtys.length !== prices.length,
+  }
+}
+
+const TIERS_MISMATCH =
+  'Los precios por mayor no son válidos. Recarga la página e inténtalo de nuevo.'
+
 function readProductForm(formData: FormData) {
+  const tiers = readTiers(formData)
   const values: ProductFormValues = {
     name: text(formData, 'name'),
     barcode: text(formData, 'barcode'),
@@ -135,6 +152,7 @@ function readProductForm(formData: FormData) {
     tracksStock: formData.get('tracksStock') === 'on',
     initialStock: text(formData, 'initialStock'),
     minStock: text(formData, 'minStock'),
+    tiers: tiers.rows,
   }
   const parsed = productInputSchema.safeParse({
     name: values.name,
@@ -144,8 +162,9 @@ function readProductForm(formData: FormData) {
     tracksStock: values.tracksStock,
     initialStock: values.initialStock,
     minStock: values.minStock,
+    tiers: values.tiers,
   })
-  return { values, parsed }
+  return { values, parsed, tiersMismatch: tiers.mismatch }
 }
 
 /** Zod nombra el campo `priceCents`; el input del formulario se llama `price`. */
@@ -158,7 +177,8 @@ export async function createProductAction(
   _prev: FormState,
   formData: FormData,
 ): Promise<FormState> {
-  const { values, parsed } = readProductForm(formData)
+  const { values, parsed, tiersMismatch } = readProductForm(formData)
+  if (tiersMismatch) return { ok: false, values, error: TIERS_MISMATCH }
   if (!parsed.success) return { ok: false, values, fieldErrors: fieldErrorsOf(parsed.error) }
 
   try {
@@ -176,7 +196,8 @@ export async function updateProductAction(
   _prev: FormState,
   formData: FormData,
 ): Promise<FormState> {
-  const { values, parsed } = readProductForm(formData)
+  const { values, parsed, tiersMismatch } = readProductForm(formData)
+  if (tiersMismatch) return { ok: false, values, error: TIERS_MISMATCH }
   const id = idSchema.safeParse(text(formData, 'id'))
   if (!id.success) return { ok: false, values, error: NOT_FOUND }
   if (!parsed.success) return { ok: false, values, fieldErrors: fieldErrorsOf(parsed.error) }
@@ -345,7 +366,9 @@ export async function commitImportAction(input: {
   } catch (e) {
     if (isNextControlFlow(e)) throw e
     if (e instanceof ForbiddenError) return { ok: false, error: e.message }
-    if (uniqueViolation(e) !== null) return { ok: false, error: IMPORT_RACE }
+    if (uniqueViolation(e) !== null || e instanceof ImportConflictError) {
+      return { ok: false, error: IMPORT_RACE }
+    }
     console.error('[productos] importación falló', e)
     return { ok: false, error: GENERIC_ERROR }
   }

@@ -103,6 +103,9 @@ export type ExistingProduct = {
   nameKey: string
   barcode: string | null
   tracksStock: boolean
+  priceCents: number
+  /** Tiene precios por mayor: su precio solo se cambia desde el producto. */
+  hasTiers: boolean
 }
 
 export type ExistingIndex = {
@@ -119,6 +122,8 @@ export function indexExisting(products: ExistingProduct[]): ExistingIndex {
   }
   return { byKey, byBarcode }
 }
+
+export const TIERED_PRICE_MESSAGE = 'Tiene precios por mayor: cambia su precio desde el producto'
 
 export type ImportStatus = 'new' | 'existing' | 'duplicate' | 'error'
 
@@ -141,7 +146,11 @@ export type ClassifiedRow = {
  * - new: lo demás.
  * Un código de barras de la bodega solo es compatible con el producto del mismo nombre.
  */
-export function classify(rows: ValidatedRow[], existing: ExistingIndex): ClassifiedRow[] {
+export function classify(
+  rows: ValidatedRow[],
+  existing: ExistingIndex,
+  { blockTieredPriceChange = true }: { blockTieredPriceChange?: boolean } = {},
+): ClassifiedRow[] {
   const seenKeys = new Map<string, number>()
   const seenBarcodes = new Map<string, number>()
 
@@ -170,6 +179,17 @@ export function classify(rows: ValidatedRow[], existing: ExistingIndex): Classif
             message: `El código de barras pertenece a otro producto (${byBarcode.name})`,
           },
         ],
+      }
+    }
+
+    // Cambiar el precio normal de un producto con niveles dejaría los niveles incoherentes (p. ej.
+    // descuentos enormes si sube): solo se permite desde el formulario del producto.
+    if (blockTieredPriceChange && byName?.hasTiers && byName.priceCents !== input.priceCents) {
+      return {
+        line: row.line,
+        status: 'error',
+        input,
+        errors: [{ field: 'price', message: TIERED_PRICE_MESSAGE }],
       }
     }
 

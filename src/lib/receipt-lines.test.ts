@@ -8,8 +8,22 @@ const sale: SaleSummary = {
   createdAt: '2026-10-14T18:05:00.000Z', // 13:05 en Lima (UTC-5)
   paymentMethod: 'yape_plin',
   lines: [
-    { name: 'Inca Kola 500 ml', qty: 2, unitPriceCents: 300, lineTotalCents: 600 },
-    { name: 'Pan francés', qty: 3, unitPriceCents: 30, lineTotalCents: 90 },
+    {
+      name: 'Inca Kola 500 ml',
+      qty: 2,
+      unitPriceCents: 300,
+      listUnitPriceCents: 300,
+      priceSource: 'normal',
+      lineTotalCents: 600,
+    },
+    {
+      name: 'Pan francés',
+      qty: 3,
+      unitPriceCents: 30,
+      listUnitPriceCents: 30,
+      priceSource: 'normal',
+      lineTotalCents: 90,
+    },
   ],
   subtotalCents: 585,
   igvCents: 105,
@@ -48,6 +62,29 @@ describe('receiptLines', () => {
     const r = rows(lines)
     expect(r[0]).toMatch(/^2 × Inca Kola 500 ml\|S\/.6\.00$/)
     expect(r[1]).toMatch(/^3 × Pan francés\|S\/.0\.90$/)
+  })
+
+  it('una línea normal no muestra detalle de precio por mayor', () => {
+    expect(rows(lines).join('\n')).not.toMatch(/por mayor/)
+  })
+
+  it('una línea por mayor agrega "N × precio (por mayor)" justo debajo, con el total correcto', () => {
+    const mayor: SaleSummary = {
+      ...sale,
+      lines: [
+        {
+          name: 'Inca Kola 500 ml',
+          qty: 8,
+          unitPriceCents: 250,
+          listUnitPriceCents: 300,
+          priceSource: 'mayor',
+          lineTotalCents: 2000,
+        },
+      ],
+    }
+    const r = rows(receiptLines(mayor))
+    expect(r[0]).toMatch(/^8 × Inca Kola 500 ml\|S\/.20\.00$/)
+    expect(r[1]).toMatch(/^ {2}8 × S\/.2\.50 \(por mayor\)\|$/)
   })
 
   it('incluye subtotal, IGV, total, pago y cajero', () => {

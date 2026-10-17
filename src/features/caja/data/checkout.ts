@@ -1,10 +1,20 @@
 import { and, asc, eq, inArray, sql } from 'drizzle-orm'
-import { customer, product, receiptSeries, sale, saleItem, stockMovement, user } from '@/db/schema'
+import {
+  customer,
+  product,
+  productPriceTier,
+  receiptSeries,
+  sale,
+  saleItem,
+  stockMovement,
+  user,
+} from '@/db/schema'
 import { toSnapshot } from '@/lib/business-profile'
 import type { Db } from '@/lib/db-types'
 import type { DocumentType } from '@/lib/document'
 import { uniqueViolation } from '@/lib/errors'
 import type { PaymentMethod } from '@/lib/payment'
+import { type PriceTier, unitPriceFor } from '@/lib/pricing'
 import { DEFAULT_RECEIPT_SERIES } from '@/lib/receipt'
 import type { SaleSummary } from '@/lib/receipt-lines'
 import { getBusinessProfile, snapshotOrCurrent } from '@/lib/settings'
@@ -51,6 +61,14 @@ export class CustomerUnavailableError extends CheckoutError {
   }
 }
 
+/** El total que vio el cajero ya no coincide con el del servidor (precios o niveles cambiaron). */
+export class PriceChangedError extends CheckoutError {
+  constructor() {
+    super('Los precios cambiaron. Revisa el ticket antes de cobrar.')
+    this.name = 'PriceChangedError'
+  }
+}
+
 const GENERIC = 'No se pudo registrar la venta. Inténtalo de nuevo.'
 
 type Tx = Parameters<Parameters<Db['transaction']>[0]>[0]
@@ -72,6 +90,12 @@ export type CheckoutParams = {
    * verifica que sea de ESTA bodega y esté activo; nombre y documento salen de la DB.
    */
   customerId?: string | null
+  /**
+   * Total que el cajero ve en pantalla. SOLO es un guard: si difiere del total calculado por el
+   * servidor se rechaza TODO antes de escribir nada. Nunca se usa como precio. Un reintento
+   * idempotente de una venta ya guardada NO se rechaza por esto.
+   */
+  expectedTotalCents?: number
   /** Solo producto y cantidad: los precios SIEMPRE se leen de la DB. */
   items: { productId: string; quantity: number }[]
 }
@@ -161,18 +185,50 @@ export async function checkout(db: Db, params: CheckoutParams): Promise<SaleSumm
 
       if (products.length !== ids.length) throw await unavailable(tx, orgId, ids, products)
 
-      const priced = products.map((p) => ({ p, qty: merged.get(p.id) ?? 0 }))
+      // Precio por mayor: el nivel lo decide el SERVIDOR con la cantidad ya sumada por producto y los
+      // niveles de ESTA bodega leídos bajo el bloqueo de los productos. El cliente solo manda cantidades.
+      const tierRows = await tx
+        .select({
+          productId: productPriceTier.productId,
+          minQty: productPriceTier.minQty,
+          unitPriceCents: productPriceTier.unitPriceCents,
+        })
+        .from(productPriceTier)
+        .where(
+          and(eq(productPriceTier.organizationId, orgId), inArray(productPriceTier.productId, ids)),
+        )
+      const tiersOf = new Map<string, PriceTier[]>()
+      for (const { productId, ...tier } of tierRows) {
+        tiersOf.set(productId, [...(tiersOf.get(productId) ?? []), tier])
+      }
+
+      const priced = products.map((p) => {
+        const qty = merged.get(p.id) ?? 0
+        const price = unitPriceFor(
+          { basePriceCents: p.priceCents, tiers: tiersOf.get(p.id) ?? [] },
+          qty,
+        )
+        return { p, qty, unitPriceCents: price.unitPriceCents, source: price.source }
+      })
       for (const { p, qty } of priced) {
         if (p.tracksStock && p.stock < qty) throw new InsufficientStockError(p.name, p.stock)
       }
 
       const totals = computeTotals(
-        priced.map(({ p, qty }) => ({ unitPriceCents: p.priceCents, qty })),
+        priced.map(({ unitPriceCents, qty }) => ({ unitPriceCents, qty })),
       )
+
+      // Guard contra un catálogo viejo en pantalla: ANTES del correlativo y de cualquier escritura
+      if (params.expectedTotalCents !== undefined && params.expectedTotalCents !== totals.total) {
+        throw new PriceChangedError()
+      }
 
       // La columna es integer (máx. 2 147 483 647 céntimos ≈ S/ 21 millones): error claro, no un crash
       const tooBig = (n: number) => n > MAX_INT
-      if (tooBig(totals.total) || priced.some(({ p, qty }) => tooBig(p.priceCents * qty))) {
+      if (
+        tooBig(totals.total) ||
+        priced.some(({ unitPriceCents, qty }) => tooBig(unitPriceCents * qty))
+      ) {
         throw new CheckoutError('El total de la venta supera el máximo permitido')
       }
 
@@ -209,13 +265,15 @@ export async function checkout(db: Db, params: CheckoutParams): Promise<SaleSumm
       })
 
       await tx.insert(saleItem).values(
-        priced.map(({ p, qty }) => ({
+        priced.map(({ p, qty, unitPriceCents, source }) => ({
           saleId,
           productId: p.id,
           productName: p.name,
-          unitPriceCents: p.priceCents,
+          unitPriceCents,
+          listUnitPriceCents: p.priceCents,
+          priceSource: source,
           quantity: qty,
-          lineTotalCents: p.priceCents * qty,
+          lineTotalCents: unitPriceCents * qty,
         })),
       )
 
@@ -297,6 +355,8 @@ async function findExisting(
       name: saleItem.productName,
       qty: saleItem.quantity,
       unitPriceCents: saleItem.unitPriceCents,
+      listUnitPriceCents: saleItem.listUnitPriceCents,
+      priceSource: saleItem.priceSource,
       lineTotalCents: saleItem.lineTotalCents,
     })
     .from(saleItem)

@@ -29,11 +29,41 @@ const prod = (over: Partial<ExistingProduct> = {}): ExistingProduct => ({
   nameKey: 'inca kola',
   barcode: null,
   tracksStock: true,
+  priceCents: 350,
+  hasTiers: false,
   ...over,
 })
 
 const run = (rows: RawImportRow[], existing: ExistingProduct[] = []) =>
   classify(validateRows(rows), indexExisting(existing))
+
+describe('classify: productos con precios por mayor', () => {
+  it('existente con niveles y precio distinto = error (vista previa y commit)', () => {
+    const rows = run([raw({ name: 'Inca Kola', price: '4.00' })], [prod({ hasTiers: true })])
+    expect(rows[0].status).toBe('error')
+    expect(rows[0].errors[0]).toMatchObject({
+      field: 'price',
+      message: 'Tiene precios por mayor: cambia su precio desde el producto',
+    })
+  })
+
+  it('con niveles y el MISMO precio sigue siendo existente', () => {
+    const rows = run([raw({ name: 'Inca Kola', price: '3.50' })], [prod({ hasTiers: true })])
+    expect(rows[0].status).toBe('existing')
+  })
+
+  it('sin niveles el cambio de precio es normal; con el bloqueo apagado también', () => {
+    expect(run([raw({ price: '4.00' })], [prod()])[0].status).toBe('existing')
+    const off = classify(
+      validateRows([raw({ price: '4.00' })]),
+      indexExisting([prod({ hasTiers: true })]),
+      {
+        blockTieredPriceChange: false,
+      },
+    )
+    expect(off[0].status).toBe('existing')
+  })
+})
 
 describe('parseTracksStock', () => {
   it.each([

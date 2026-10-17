@@ -2,6 +2,7 @@ import type { BusinessSnapshot } from '@/lib/business-profile'
 import { type DocumentType, formatDocument } from '@/lib/document'
 import { formatCents } from '@/lib/format'
 import { PAYMENT_LABELS, type PaymentMethod } from '@/lib/payment'
+import type { PriceSource } from '@/lib/pricing'
 import { formatReceiptNumber } from '@/lib/receipt'
 
 /** Mismos valores que el enum `sale_status` de la DB. */
@@ -27,7 +28,16 @@ export type SaleSummary = {
   /** ISO 8601 */
   createdAt: string
   paymentMethod: PaymentMethod
-  lines: { name: string; qty: number; unitPriceCents: number; lineTotalCents: number }[]
+  lines: {
+    name: string
+    qty: number
+    /** Precio unitario cobrado (con el nivel por mayor, si aplicó). */
+    unitPriceCents: number
+    /** Precio normal del producto al vender (snapshot). */
+    listUnitPriceCents: number
+    priceSource: PriceSource
+    lineTotalCents: number
+  }[]
   subtotalCents: number
   igvCents: number
   totalCents: number
@@ -120,6 +130,13 @@ export function receiptLines(sale: SaleSummary): ReceiptLine[] {
   ]
   for (const l of sale.lines) {
     out.push({ kind: 'row', left: `${l.qty} × ${l.name}`, right: formatCents(l.lineTotalCents) })
+    if (l.priceSource === 'mayor') {
+      out.push({
+        kind: 'row',
+        left: `  ${l.qty} × ${formatCents(l.unitPriceCents)} (por mayor)`,
+        right: '',
+      })
+    }
   }
   out.push(
     { kind: 'rule' },

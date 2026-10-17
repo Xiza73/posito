@@ -4,6 +4,7 @@ import { useRef, useState, useTransition } from 'react'
 import { ReceiptDialog } from '@/components/receipt/receipt-dialog'
 import type { CustomerOption } from '@/lib/customer-input'
 import type { PaymentMethod } from '@/lib/payment'
+import { unitPriceFor } from '@/lib/pricing'
 import type { SaleSummary } from '@/lib/receipt-lines'
 import { checkoutAction } from '../actions'
 import { type CatalogProduct, canAddMore, matchesQuery } from '../lib/catalog'
@@ -55,9 +56,18 @@ export function CajaScreen({ products, categories, canCreateCustomer, imageBase 
 
   const lines: CartLineView[] = Object.entries(cart).flatMap(([id, qty]) => {
     const item = byId.get(id)
-    return item ? [{ item, qty }] : []
+    // Solo para mostrar: el servidor recalcula el nivel por mayor al cobrar
+    return item
+      ? [
+          {
+            item,
+            qty,
+            price: unitPriceFor({ basePriceCents: item.priceCents, tiers: item.tiers }, qty),
+          },
+        ]
+      : []
   })
-  const priced = lines.map((l) => ({ unitPriceCents: l.item.priceCents, qty: l.qty }))
+  const priced = lines.map((l) => ({ unitPriceCents: l.price.unitPriceCents, qty: l.qty }))
   const totals = computeTotals(priced)
   const count = itemCount(priced)
 
@@ -98,6 +108,7 @@ export function CajaScreen({ products, categories, canCreateCustomer, imageBase 
       saleId: saleIdRef.current,
       paymentMethod: pay,
       customerId: customer?.id,
+      expectedTotalCents: totals.total,
       items: lines.map((l) => ({ productId: l.item.id, quantity: l.qty })),
     }
     setError(null)

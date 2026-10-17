@@ -52,6 +52,136 @@ beforeAll(async () => {
   await db.insert(schema.user).values({ id: USER, name: 'Ana', email: 'ana@test.pe' })
 })
 
+const tiersOf = async (productId: string) =>
+  (
+    await db
+      .select({
+        minQty: schema.productPriceTier.minQty,
+        unitPriceCents: schema.productPriceTier.unitPriceCents,
+      })
+      .from(schema.productPriceTier)
+      .where(eq(schema.productPriceTier.productId, productId))
+  ).sort((a, b) => a.minQty - b.minQty)
+
+describe('precio por mayor (niveles)', () => {
+  const T = [
+    { minQty: 6, unitPriceCents: 250 },
+    { minQty: 12, unitPriceCents: 230 },
+  ]
+
+  it('createProduct guarda los niveles con la bodega del producto', async () => {
+    const { id } = await createProduct(db, {
+      orgId: ORG_A,
+      userId: USER,
+      input: input({ name: 'Tiers alta', tiers: T }),
+    })
+    expect(await tiersOf(id)).toEqual(T)
+    const [row] = await db
+      .select()
+      .from(schema.productPriceTier)
+      .where(eq(schema.productPriceTier.productId, id))
+    expect(row.organizationId).toBe(ORG_A)
+  })
+
+  it('updateProduct reemplaza TODOS los niveles; [] los quita; undefined no los toca', async () => {
+    const { id } = await createProduct(db, {
+      orgId: ORG_A,
+      userId: USER,
+      input: input({ name: 'Tiers edición', tiers: T }),
+    })
+    await updateProduct(db, {
+      orgId: ORG_A,
+      id,
+      input: input({ name: 'Tiers edición', tiers: [{ minQty: 3, unitPriceCents: 280 }] }),
+    })
+    expect(await tiersOf(id)).toEqual([{ minQty: 3, unitPriceCents: 280 }])
+
+    await updateProduct(db, { orgId: ORG_A, id, input: input({ name: 'Tiers edición' }) })
+    expect(await tiersOf(id)).toEqual([{ minQty: 3, unitPriceCents: 280 }])
+
+    await updateProduct(db, {
+      orgId: ORG_A,
+      id,
+      input: input({ name: 'Tiers edición', tiers: [] }),
+    })
+    expect(await tiersOf(id)).toEqual([])
+  })
+
+  it('es atómico: si el reemplazo falla, el producto y los niveles anteriores quedan intactos', async () => {
+    const { id } = await createProduct(db, {
+      orgId: ORG_A,
+      userId: USER,
+      input: input({ name: 'Tiers atómico', tiers: T }),
+    })
+    // minQty repetido viola el índice único (product_id, min_qty) en el INSERT
+    await expect(
+      updateProduct(db, {
+        orgId: ORG_A,
+        id,
+        input: input({
+          name: 'Tiers atómico',
+          priceCents: 999,
+          tiers: [
+            { minQty: 4, unitPriceCents: 100 },
+            { minQty: 4, unitPriceCents: 90 },
+          ],
+        }),
+      }),
+    ).rejects.toThrow()
+    expect(await tiersOf(id)).toEqual(T)
+    expect((await rowOf(id)).priceCents).toBe(300)
+  })
+
+  it('tiers de un producto inexistente o de otra bodega no se escriben (replaceTiers bloquea y verifica)', async () => {
+    const { id } = await createProduct(db, {
+      orgId: ORG_A,
+      userId: USER,
+      input: input({ name: 'Tiers lock' }),
+    })
+    // createProduct de ORG_B con el mismo id de producto no existe: se simula con un id ajeno
+    await expect(
+      db.transaction(async (tx) => {
+        const { id: other } = await createProduct(tx, {
+          orgId: ORG_B,
+          userId: USER,
+          input: input({ name: 'Tiers lock B' }),
+        })
+        return updateProduct(tx, { orgId: ORG_A, id: other, input: input({ tiers: T }) })
+      }),
+    ).resolves.toBeNull()
+    expect(await tiersOf(id)).toEqual([])
+  })
+
+  it('updateProduct de otra bodega no toca los niveles', async () => {
+    const { id } = await createProduct(db, {
+      orgId: ORG_A,
+      userId: USER,
+      input: input({ name: 'Tiers ajeno', tiers: T }),
+    })
+    expect(
+      await updateProduct(db, { orgId: ORG_B, id, input: input({ name: 'X', tiers: [] }) }),
+    ).toBeNull()
+    expect(await tiersOf(id)).toEqual(T)
+  })
+
+  it('listProducts devuelve los niveles ordenados y solo de la bodega', async () => {
+    const { id } = await createProduct(db, {
+      orgId: ORG_A,
+      userId: USER,
+      input: input({ name: 'Tiers lista', tiers: [...T].reverse() }),
+    })
+    const { id: plain } = await createProduct(db, {
+      orgId: ORG_A,
+      userId: USER,
+      input: input({ name: 'Tiers lista sin' }),
+    })
+    const list = await listProducts(db, ORG_A, { query: 'Tiers lista' })
+    expect(list.find((p) => p.id === id)?.tiers).toEqual(T)
+    expect(list.find((p) => p.id === plain)?.tiers).toEqual([])
+    expect((await listProducts(db, ORG_B)).flatMap((p) => p.tiers)).toEqual([])
+  })
+})
+
 describe('createProduct', () => {
   it('con stock inicial crea exactamente un movimiento `ingreso` y stock = N', async () => {
     const { id } = await createProduct(db, {
