@@ -11,6 +11,8 @@ import type { Storage } from '@/lib/storage'
 import { deleteImageObjects } from './image-storage'
 import type { Db } from './products'
 
+export type UploadKind = 'main' | 'gallery'
+
 // Subidas de foto de UN SOLO USO (tabla product_image_upload). Todas filtran por orgId de la sesión.
 
 const cutoff = (now: Date, ms: number) => new Date(now.getTime() - ms)
@@ -23,8 +25,16 @@ export async function createImageUpload(
     productId,
     userId,
     uploadId,
+    kind = 'main',
     now = new Date(),
-  }: { orgId: string; productId: string; userId: string; uploadId: string; now?: Date },
+  }: {
+    orgId: string
+    productId: string
+    userId: string
+    uploadId: string
+    kind?: UploadKind
+    now?: Date
+  },
 ): Promise<'ok' | 'too_many' | 'not_found'> {
   return db.transaction(async (tx) => {
     const [found] = await tx
@@ -51,6 +61,7 @@ export async function createImageUpload(
       organizationId: orgId,
       productId,
       userId,
+      kind,
       createdAt: now,
     })
     return 'ok'
@@ -64,8 +75,9 @@ export async function hasPendingUpload(
     orgId,
     productId,
     uploadId,
+    kind = 'main',
     now = new Date(),
-  }: { orgId: string; productId: string; uploadId: string; now?: Date },
+  }: { orgId: string; productId: string; uploadId: string; kind?: UploadKind; now?: Date },
 ): Promise<boolean> {
   const [row] = await db
     .select({ id: productImageUpload.id })
@@ -75,6 +87,7 @@ export async function hasPendingUpload(
         eq(productImageUpload.id, uploadId),
         eq(productImageUpload.organizationId, orgId),
         eq(productImageUpload.productId, productId),
+        eq(productImageUpload.kind, kind),
         isNull(productImageUpload.consumedAt),
         gt(productImageUpload.createdAt, cutoff(now, UPLOAD_TTL_MS)),
       ),
@@ -126,6 +139,7 @@ export async function consumeUploadAndSetImage(
           eq(productImageUpload.id, uploadId),
           eq(productImageUpload.organizationId, orgId),
           eq(productImageUpload.productId, productId),
+          eq(productImageUpload.kind, 'main'),
           isNull(productImageUpload.consumedAt),
           gt(productImageUpload.createdAt, cutoff(now, UPLOAD_TTL_MS)),
         ),
