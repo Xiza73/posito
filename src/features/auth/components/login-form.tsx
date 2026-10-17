@@ -2,6 +2,7 @@
 
 import { useRouter } from 'next/navigation'
 import { type FormEvent, useState } from 'react'
+import { loginErrorMessage } from '@/features/auth/lib/login-error'
 import { authClient } from '@/lib/auth-client'
 
 const INPUT = 'h-11.5 rounded-ctl border border-line bg-page px-3.5 text-ink'
@@ -21,7 +22,7 @@ export function LoginForm() {
       password: String(form.get('password') ?? ''),
     })
     if (error) {
-      setError('Correo o contraseña incorrectos')
+      setError(loginErrorMessage(error))
       setPending(false)
       return
     }

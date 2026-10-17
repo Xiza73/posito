@@ -1,7 +1,7 @@
 import { and, asc, desc, eq, gte, lt, type SQL, sql } from 'drizzle-orm'
 import { product, sale, saleItem } from '@/db/schema'
 import type { Db } from '@/lib/db-types'
-import { addDays, LIMA_TZ, limaRangeToUtc, todayInLima } from '@/lib/lima-time'
+import { addDays, LIMA_TZ, todayInLima } from '@/lib/lima-time'
 import { PAYMENT_METHODS, type PaymentMethod } from '@/lib/payment'
 import { can, seesAllSales } from '@/lib/permissions'
 import { averageTicket, type Bucket, fillDays, fillHours, percentChange } from '../lib/metrics'
