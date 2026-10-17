@@ -12,10 +12,12 @@ type Props = {
   categories: { id: string; name: string }[]
   filters: { query: string; categoryId: string; includeInactive: boolean }
   perms: { create: boolean; update: boolean; delete: boolean }
+  /** Base pública de las fotos (publicImageBase) o null. */
+  imageBase: string | null
 }
 
 /** Orquesta filtros, lista y el diálogo de alta/edición. */
-export function ProductsView({ products, categories, filters, perms }: Props) {
+export function ProductsView({ products, categories, filters, perms, imageBase }: Props) {
   const [target, setTarget] = useState<ProductRow | 'new' | null>(null)
   const [importing, setImporting] = useState(false)
   // Mientras llega la lista nueva, la actual está obsoleta: no se puede actuar sobre sus filas.
@@ -67,6 +69,7 @@ export function ProductsView({ products, categories, filters, perms }: Props) {
           canUpdate={perms.update}
           canDelete={perms.delete}
           onEdit={setTarget}
+          imageBase={imageBase}
         />
       </div>
 
@@ -76,6 +79,7 @@ export function ProductsView({ products, categories, filters, perms }: Props) {
         <ProductFormDialog
           target={target}
           categories={categories.map((c) => c.name)}
+          imageBase={imageBase}
           onClose={() => setTarget(null)}
         />
       ) : null}

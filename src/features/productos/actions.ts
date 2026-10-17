@@ -1,17 +1,38 @@
 'use server'
 
+import { randomUUID } from 'node:crypto'
 import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
 import { db } from '@/lib/db'
 import { isNextControlFlow, uniqueViolation } from '@/lib/errors'
+import {
+  IMAGE_BUCKET,
+  imageBasePath,
+  imageObjectPaths,
+  isValidImageBasePath,
+} from '@/lib/product-image'
 import {
   ForbiddenError,
   getCurrentMember,
   type Permissions,
   requirePermission,
 } from '@/lib/session'
+import { getStorage, StorageConfigError } from '@/lib/storage-server'
+import {
+  deleteImageObjects,
+  isImageBucketConfigured,
+  verifyImageObjects,
+} from './data/image-storage'
+import {
+  cleanupExpiredUploads,
+  consumeUploadAndSetImage,
+  createImageUpload,
+  discardImageUpload,
+  hasPendingUpload,
+} from './data/image-uploads'
 import { commitImport, previewImport } from './data/import'
 import {
+  clearProductImage,
   createCategory,
   createProduct,
   deleteCategory,
@@ -318,5 +339,147 @@ export async function commitImportAction(input: {
     if (uniqueViolation(e) !== null) return { ok: false, error: IMPORT_RACE }
     console.error('[productos] importación falló', e)
     return { ok: false, error: GENERIC_ERROR }
+  }
+}
+
+// --- Fotos de producto (Supabase Storage) ---
+// Flujo: el navegador reduce la foto (800/240 px WebP) -> requestProductImageUpload (URLs firmadas)
+// -> PUT directo a Storage -> confirmProductImage (el servidor verifica los objetos y guarda la ruta).
+
+const IMAGE_ERROR = 'No se pudo procesar la foto. Inténtalo de nuevo.'
+const IMAGE_NOT_CONFIGURED = 'El almacenamiento de fotos no está configurado.'
+const confirmImageSchema = z.object({ productId: idSchema, basePath: z.string().max(200) })
+
+export type RequestImageUploadResult =
+  | { ok: true; basePath: string; largeUrl: string; thumbUrl: string }
+  | { ok: false; error: string }
+
+export type ImageResult = { ok: true; imagePath: string | null } | { ok: false; error: string }
+
+function imageError(e: unknown): { ok: false; error: string } {
+  if (isNextControlFlow(e)) throw e
+  if (e instanceof ForbiddenError) return { ok: false, error: e.message }
+  if (e instanceof StorageConfigError) return { ok: false, error: IMAGE_NOT_CONFIGURED }
+  // Solo el mensaje: StorageError ya viene sin secretos; jamás se registra el objeto de error crudo
+  console.error('[productos] foto falló', e instanceof Error ? e.message : 'error desconocido')
+  return { ok: false, error: IMAGE_ERROR }
+}
+
+/** Paso 1: autoriza, verifica el producto y el bucket, registra una subida pendiente y firma dos URLs. */
+export async function requestProductImageUpload(input: {
+  productId: string
+}): Promise<RequestImageUploadResult> {
+  const productId = idSchema.safeParse(input?.productId)
+  if (!productId.success) return { ok: false, error: NOT_FOUND }
+
+  try {
+    const { organization, user } = await authorize({ product: ['update'] })
+    const storage = getStorage()
+    // Falla cerrado: si el bucket no está público / solo webp / ≤ 1 MB, no se firma nada
+    if (!(await isImageBucketConfigured(storage))) return { ok: false, error: IMAGE_ERROR }
+
+    const uploadId = randomUUID()
+    const created = await createImageUpload(db, {
+      orgId: organization.id,
+      productId: productId.data,
+      userId: user.id,
+      uploadId,
+    })
+    if (created === 'not_found') return { ok: false, error: NOT_FOUND }
+    if (created === 'too_many') {
+      return { ok: false, error: 'Demasiadas subidas pendientes, intenta en unos minutos' }
+    }
+
+    const basePath = imageBasePath(organization.id, productId.data, uploadId)
+    let large: { url: string }
+    let thumb: { url: string }
+    try {
+      ;[large, thumb] = await Promise.all(
+        imageObjectPaths(basePath).map((path) => storage.signUpload(IMAGE_BUCKET, path)),
+      )
+    } catch (e) {
+      await discardImageUpload(db, { orgId: organization.id, uploadId }).catch(() => {})
+      throw e
+    }
+
+    // Limpieza de subidas vencidas de la bodega: mejor esfuerzo, no afecta a esta respuesta
+    await cleanupExpiredUploads(db, storage, { orgId: organization.id }).catch((e) =>
+      console.error(
+        '[productos] limpieza de subidas falló',
+        e instanceof Error ? e.message : 'error',
+      ),
+    )
+    return { ok: true, basePath, largeUrl: large.url, thumbUrl: thumb.url }
+  } catch (e) {
+    return imageError(e)
+  }
+}
+
+/**
+ * Paso 3: nunca confía en la ruta del cliente. Exige una subida pendiente (de un solo uso) de ESTA
+ * bodega y producto, verifica metadata y bytes reales en Storage, y la consume en la misma
+ * transacción que guarda la ruta.
+ */
+export async function confirmProductImage(input: {
+  productId: string
+  basePath: string
+}): Promise<ImageResult> {
+  const parsed = confirmImageSchema.safeParse(input)
+  if (!parsed.success) return { ok: false, error: NOT_FOUND }
+  const { productId, basePath } = parsed.data
+
+  try {
+    const { organization } = await authorize({ product: ['update'] })
+    if (!isValidImageBasePath(basePath, organization.id, productId)) {
+      return { ok: false, error: IMAGE_ERROR }
+    }
+    const uploadId = basePath.slice(basePath.lastIndexOf('/') + 1)
+    // ANTES de tocar Storage: un uuid consumido/vencido/ajeno se rechaza sin borrar nada (sus
+    // objetos pueden ser la foto vigente del producto)
+    const orgId = organization.id
+    if (!(await hasPendingUpload(db, { orgId, productId, uploadId }))) {
+      return { ok: false, error: IMAGE_ERROR }
+    }
+
+    const storage = getStorage()
+    if (!(await verifyImageObjects(storage, basePath))) {
+      await deleteImageObjects(storage, basePath)
+      await discardImageUpload(db, { orgId, uploadId })
+      return { ok: false, error: 'La foto no se subió correctamente. Inténtalo de nuevo.' }
+    }
+
+    const res = await consumeUploadAndSetImage(db, {
+      orgId,
+      productId,
+      uploadId,
+      imagePath: basePath,
+    })
+    if (!res.ok) {
+      // 'invalid_upload' = otra confirmación ganó la carrera: los objetos ya están en uso, no se borran
+      if (res.reason === 'not_found') await deleteImageObjects(storage, basePath)
+      return { ok: false, error: res.reason === 'not_found' ? NOT_FOUND : IMAGE_ERROR }
+    }
+    if (res.previous && res.previous !== basePath) await deleteImageObjects(storage, res.previous)
+    revalidateCatalog()
+    return { ok: true, imagePath: basePath }
+  } catch (e) {
+    return imageError(e)
+  }
+}
+
+export async function removeProductImage(input: { productId: string }): Promise<ImageResult> {
+  const productId = idSchema.safeParse(input?.productId)
+  if (!productId.success) return { ok: false, error: NOT_FOUND }
+
+  try {
+    const { organization } = await authorize({ product: ['update'] })
+    const storage = getStorage()
+    const res = await clearProductImage(db, { orgId: organization.id, id: productId.data })
+    if (!res) return { ok: false, error: NOT_FOUND }
+    if (res.previous) await deleteImageObjects(storage, res.previous)
+    revalidateCatalog()
+    return { ok: true, imagePath: null }
+  } catch (e) {
+    return imageError(e)
   }
 }

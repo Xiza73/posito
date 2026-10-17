@@ -4,6 +4,7 @@ import { ProductsView } from '@/features/productos/components/products-view'
 import { listCategoriesWithCounts, listProducts } from '@/features/productos/data/products'
 import { db } from '@/lib/db'
 import { can } from '@/lib/permissions'
+import { publicImageBase } from '@/lib/product-image'
 import { getCurrentMember } from '@/lib/session'
 
 type SearchParams = Promise<{ q?: string; categoria?: string; inactivos?: string }>
@@ -41,6 +42,7 @@ export default async function ProductosPage({ searchParams }: { searchParams: Se
         categories={categories.map((c) => ({ id: c.id, name: c.name }))}
         filters={{ query, categoryId, includeInactive }}
         perms={perms}
+        imageBase={publicImageBase(process.env.SUPABASE_URL)}
       />
     </div>
   )

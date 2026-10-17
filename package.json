@@ -18,7 +18,8 @@
     "db:migrate": "drizzle-kit migrate",
     "db:studio": "drizzle-kit studio",
     "bodega:create": "bun scripts/create-bodega.ts",
-    "seed:productos": "bun scripts/seed-productos.ts"
+    "seed:productos": "bun scripts/seed-productos.ts",
+    "storage:setup": "bun scripts/setup-storage.ts"
   },
   "dependencies": {
     "better-auth": "^1.7.7",

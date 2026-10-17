@@ -78,6 +78,20 @@
       "when": 1792196796958,
       "tag": "0010_rate_limit",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1792254975281,
+      "tag": "0011_product_image",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1792255852375,
+      "tag": "0012_product_image_upload",
+      "breakpoints": true
     }
   ]
 }

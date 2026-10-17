@@ -74,6 +74,8 @@ export const product = pgTable(
     stock: integer().default(0).notNull(),
     minStock: integer().default(0).notNull(),
     active: boolean().default(true).notNull(),
+    // Base `${orgId}/${productId}/${uuid}` en Supabase Storage (src/lib/product-image.ts); null = sin foto
+    imagePath: text(),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -84,7 +86,32 @@ export const product = pgTable(
     check('product_price_non_negative', sql`${t.priceCents} >= 0`),
     check('product_stock_non_negative', sql`${t.stock} >= 0`),
     check('product_min_stock_non_negative', sql`${t.minStock} >= 0`),
+    // Defensa en profundidad: orgId (alfanumérico, ids de Better Auth) / productId / uuid de la imagen
+    check(
+      'product_image_path_format',
+      sql`${t.imagePath} is null or ${t.imagePath} ~ '^[A-Za-z0-9_-]+/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'`,
+    ),
   ],
+)
+
+// Subida de foto de UN SOLO USO: el id ES el uuid de la imagen (`${orgId}/${productId}/${id}-800.webp`).
+// confirmProductImage exige una fila pendiente (no consumida, de menos de 1 h) y la consume en la
+// misma transacción que guarda product.image_path. Las vencidas se limpian (objetos + fila).
+export const productImageUpload = pgTable(
+  'product_image_upload',
+  {
+    id: uuid().primaryKey(),
+    organizationId: orgId(),
+    productId: uuid()
+      .notNull()
+      .references(() => product.id, { onDelete: 'cascade' }),
+    userId: text()
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    createdAt: createdAt(),
+    consumedAt: timestamp({ withTimezone: true }),
+  },
+  (t) => [index('product_image_upload_org_idx').on(t.organizationId, t.consumedAt, t.createdAt)],
 )
 
 export const customer = pgTable(

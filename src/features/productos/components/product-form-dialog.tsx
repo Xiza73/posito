@@ -6,6 +6,7 @@ import { SubmitButton } from '@/components/ui/submit-button'
 import { createProductAction, type FormState, updateProductAction } from '../actions'
 import type { ProductRow } from '../data/products'
 import { centsToPriceInput } from '../lib/schemas'
+import { ProductImageField } from './product-image-field'
 
 const INITIAL: FormState = { ok: false }
 
@@ -14,10 +15,12 @@ type Props = {
   target: ProductRow | 'new' | null
   /** Nombres de categorías existentes, para el combobox. */
   categories: string[]
+  /** Base pública de las fotos (publicImageBase); null = Storage sin configurar, sin sección de foto. */
+  imageBase: string | null
   onClose: () => void
 }
 
-export function ProductFormDialog({ target, categories, onClose }: Props) {
+export function ProductFormDialog({ target, categories, imageBase, onClose }: Props) {
   const ref = useRef<HTMLDialogElement>(null)
 
   useEffect(() => {
@@ -40,6 +43,7 @@ export function ProductFormDialog({ target, categories, onClose }: Props) {
           key={target === 'new' ? 'new' : target.id}
           product={target === 'new' ? null : target}
           categories={categories}
+          imageBase={imageBase}
           onClose={onClose}
         />
       ) : null}
@@ -50,10 +54,12 @@ export function ProductFormDialog({ target, categories, onClose }: Props) {
 function ProductForm({
   product,
   categories,
+  imageBase,
   onClose,
 }: {
   product: ProductRow | null
   categories: string[]
+  imageBase: string | null
   onClose: () => void
 }) {
   const editing = product !== null
@@ -76,6 +82,22 @@ function ProductForm({
       </h2>
       <form action={action} className="flex flex-col gap-3.5">
         {product ? <input type="hidden" name="id" value={product.id} /> : null}
+
+        {/* La foto se sube contra Storage con el producto ya creado: en el alta solo se avisa */}
+        {imageBase ? (
+          product ? (
+            <ProductImageField
+              productId={product.id}
+              productName={product.name}
+              imageBase={imageBase}
+              initialPath={product.imagePath}
+            />
+          ) : (
+            <p className="text-muted text-xs">
+              Podrás agregar la foto después de crear el producto.
+            </p>
+          )
+        ) : null}
 
         <Field id="pf-name" label="Nombre" error={fe.name?.[0]}>
           <input
