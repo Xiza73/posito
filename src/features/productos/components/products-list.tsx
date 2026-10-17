@@ -27,6 +27,14 @@ function Thumb({ p, imageBase }: { p: ProductRow; imageBase: string | null }) {
   )
 }
 
+function WholesaleTag() {
+  return (
+    <span className="ml-2 rounded-full border border-accent px-2 py-0.5 font-normal text-accent text-xs">
+      Por mayor
+    </span>
+  )
+}
+
 function InactiveTag() {
   return (
     <span className="ml-2 rounded-full border border-line px-2 py-0.5 font-normal text-muted text-xs">
@@ -103,6 +111,7 @@ export function ProductsList({ products, imageBase, ...actions }: Props) {
                   <div>
                     <div className="font-medium">
                       {p.name}
+                      {p.tiers.length > 0 ? <WholesaleTag /> : null}
                       {p.active ? null : <InactiveTag />}
                     </div>
                     {p.barcode ? (
@@ -140,6 +149,7 @@ export function ProductsList({ products, imageBase, ...actions }: Props) {
                 <div className="min-w-0">
                   <div className="font-medium">
                     {p.name}
+                    {p.tiers.length > 0 ? <WholesaleTag /> : null}
                     {p.active ? null : <InactiveTag />}
                   </div>
                   <div className="text-muted text-xs">

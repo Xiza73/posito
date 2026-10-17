@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { type PriceTier, validateTiers } from '@/lib/pricing'
 
 const MAX_INT_DIGITS = 6 // hasta S/ 999999.99: cabe de sobra en integer (32 bits) de Postgres
 
@@ -63,20 +64,70 @@ const categoryName = z
   .refine((v) => v === '' || v.length >= 2, 'La categoría debe tener al menos 2 caracteres')
   .transform((v) => (v === '' ? null : v))
 
-export const productInputSchema = z.object({
-  name: z
-    .string()
-    .trim()
-    .min(2, 'El nombre debe tener al menos 2 caracteres')
-    .max(80, 'El nombre no puede pasar de 80 caracteres'),
-  barcode,
-  priceCents: price,
-  categoryName,
-  tracksStock: z.boolean(),
-  initialStock: count('El stock inicial debe ser un número entero'),
-  minStock: count('El stock mínimo debe ser un número entero'),
-})
+/** Fila del formulario de "Precio por mayor", tal como la escribe el usuario. */
+export type TierRow = { minQty: string; price: string }
 
-export type ProductInput = z.infer<typeof productInputSchema>
+/**
+ * Convierte las filas del formulario a niveles. Las filas totalmente vacías se ignoran; una a medias
+ * es error. NO compara contra el precio normal (eso es `validateTiers`, que necesita el precio).
+ */
+export function parseTierRows(rows: readonly TierRow[]): { tiers: PriceTier[]; errors: string[] } {
+  const tiers: PriceTier[] = []
+  const errors: string[] = []
+  rows.forEach((r, i) => {
+    const minQtyText = r.minQty.trim()
+    const priceText = r.price.trim()
+    if (minQtyText === '' && priceText === '') return
+    const minQty = /^\d{1,4}$/.test(minQtyText) ? Number(minQtyText) : null
+    const unitPriceCents = parsePriceToCents(priceText)
+    if (minQty === null || unitPriceCents === null) {
+      errors.push(`Nivel ${i + 1}: completa "Desde" (entero) y un precio válido (ej. 2.50)`)
+      return
+    }
+    tiers.push({ minQty, unitPriceCents })
+  })
+  return { tiers, errors }
+}
+
+const tiersField = z
+  .array(z.object({ minQty: z.string().max(10), price: z.string().max(20) }))
+  .max(20)
+  // Ausente (p. ej. la importación masiva, que no maneja niveles) = sin niveles
+  .default([])
+  .transform((rows, ctx) => {
+    const { tiers, errors } = parseTierRows(rows)
+    for (const message of errors) ctx.addIssue({ code: 'custom', message })
+    return errors.length > 0 ? z.NEVER : tiers
+  })
+
+export const productInputSchema = z
+  .object({
+    name: z
+      .string()
+      .trim()
+      .min(2, 'El nombre debe tener al menos 2 caracteres')
+      .max(80, 'El nombre no puede pasar de 80 caracteres'),
+    barcode,
+    priceCents: price,
+    categoryName,
+    tracksStock: z.boolean(),
+    initialStock: count('El stock inicial debe ser un número entero'),
+    minStock: count('El stock mínimo debe ser un número entero'),
+    tiers: tiersField,
+  })
+  .superRefine((d, ctx) => {
+    // Misma regla en cliente y servidor (src/lib/pricing.ts): el servidor nunca confía en el formulario
+    for (const message of validateTiers(d.priceCents, d.tiers)) {
+      ctx.addIssue({ code: 'custom', path: ['tiers'], message })
+    }
+  })
+
+/**
+ * Entrada de escritura de un producto. `tiers` es opcional en la capa de datos: ausente = no tocar
+ * los niveles (p. ej. otros flujos); presente = reemplazarlos TODOS (vacío = quitar el precio por mayor).
+ */
+export type ProductInput = Omit<z.infer<typeof productInputSchema>, 'tiers'> & {
+  tiers?: PriceTier[]
+}
 
 export const idSchema = z.uuid('Elemento no válido')

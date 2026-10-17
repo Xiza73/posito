@@ -12,6 +12,7 @@ import {
   uniqueIndex,
   uuid,
 } from 'drizzle-orm/pg-core'
+import type { PriceSource } from '@/lib/pricing'
 import { organization, user } from './auth-schema'
 
 export * from './auth-schema'
@@ -141,6 +142,29 @@ export const productPhoto = pgTable(
       'product_photo_image_path_format',
       sql`${t.imagePath} ~ '^[A-Za-z0-9_-]+/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'`,
     ),
+  ],
+)
+
+// Precio por mayor: "desde N unidades -> precio por unidad". Al cobrar, gana el nivel más alto cuyo
+// min_qty <= cantidad y se aplica a TODAS las unidades de la línea (src/lib/pricing.ts). Se
+// reemplazan completos al guardar el producto. La regla "decreciente y < precio normal" se valida
+// en la app (validateTiers), no aquí: depende del precio del producto.
+export const productPriceTier = pgTable(
+  'product_price_tier',
+  {
+    id: id(),
+    organizationId: orgId(),
+    productId: uuid()
+      .notNull()
+      .references(() => product.id, { onDelete: 'cascade' }),
+    minQty: integer().notNull(),
+    unitPriceCents: integer().notNull(),
+  },
+  (t) => [
+    uniqueIndex('product_price_tier_product_min_qty_uq').on(t.productId, t.minQty),
+    index('product_price_tier_product_idx').on(t.productId),
+    check('product_price_tier_min_qty', sql`${t.minQty} >= 2`),
+    check('product_price_tier_price_positive', sql`${t.unitPriceCents} >= 1`),
   ],
 )
 
@@ -282,12 +306,24 @@ export const saleItem = pgTable(
       .references(() => product.id, { onDelete: 'restrict' }),
     // Snapshot: si el producto cambia de nombre o precio, la venta histórica no cambia
     productName: text().notNull(),
+    // Precio unitario EFECTIVO cobrado (ya con el nivel por mayor, si aplicó)
     unitPriceCents: integer().notNull(),
+    // Snapshot del precio normal del producto al vender; con `unitPriceCents` da el ahorro por mayor
+    listUnitPriceCents: integer().notNull(),
+    // Origen del precio. text + CHECK a propósito (NO pgEnum): la próxima función agrega 'manual' y un
+    // valor nuevo de enum no se puede usar en la misma transacción de migración (55P04, CLAUDE.md §7);
+    // con text basta ampliar el CHECK.
+    priceSource: text().$type<PriceSource>().default('normal').notNull(),
     quantity: integer().notNull(),
     lineTotalCents: integer().notNull(),
   },
   (t) => [
     index('sale_item_sale_idx').on(t.saleId),
+    check('sale_item_price_source', sql`${t.priceSource} in ('normal', 'mayor')`),
+    check(
+      'sale_item_price_source_consistent',
+      sql`(${t.priceSource} <> 'normal' or ${t.unitPriceCents} = ${t.listUnitPriceCents}) and (${t.priceSource} <> 'mayor' or ${t.unitPriceCents} < ${t.listUnitPriceCents})`,
+    ),
     check('sale_item_quantity_positive', sql`${t.quantity} > 0`),
     check('sale_item_line_total', sql`${t.lineTotalCents} = ${t.unitPriceCents} * ${t.quantity}`),
   ],
@@ -338,6 +374,11 @@ export const categoryRelations = relations(category, ({ many }) => ({
 export const productRelations = relations(product, ({ one, many }) => ({
   category: one(category, { fields: [product.categoryId], references: [category.id] }),
   stockMovements: many(stockMovement),
+  priceTiers: many(productPriceTier),
+}))
+
+export const productPriceTierRelations = relations(productPriceTier, ({ one }) => ({
+  product: one(product, { fields: [productPriceTier.productId], references: [product.id] }),
 }))
 
 export const customerRelations = relations(customer, ({ many }) => ({

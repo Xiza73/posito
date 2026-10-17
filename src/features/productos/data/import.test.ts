@@ -264,6 +264,81 @@ describe('commitImport', () => {
   })
 })
 
+describe('importación y precios por mayor', () => {
+  const tiered = async (name: string) => {
+    const { id } = await createProduct(db, {
+      orgId: ORG_A,
+      userId: USER,
+      input: base({ name, priceCents: 350, tiers: [{ minQty: 6, unitPriceCents: 300 }] }),
+    })
+    return id
+  }
+  const tiersOf = async (id: string) =>
+    db.select().from(schema.productPriceTier).where(eq(schema.productPriceTier.productId, id))
+
+  it('commit con "Actualizar": cambiar el precio de un producto con niveles es error y no escribe', async () => {
+    const id = await tiered('Con niveles A')
+    const summary = await run(
+      ORG_A,
+      [row({ name: 'Con niveles A', price: '5.00', stock: '4' })],
+      true,
+    )
+    expect(summary).toEqual({ created: 0, updated: 0, skipped: 0, errors: 1 })
+    expect(await byName(ORG_A, 'Con niveles A')).toMatchObject({ priceCents: 350, stock: 0 })
+    expect(await movementsOf(id)).toHaveLength(0)
+    expect(await tiersOf(id)).toHaveLength(1)
+  })
+
+  it('commit con el mismo precio sí actualiza (suma stock) y conserva los niveles', async () => {
+    const id = await tiered('Con niveles B')
+    const summary = await run(
+      ORG_A,
+      [row({ name: 'Con niveles B', price: '3.50', stock: '4' })],
+      true,
+    )
+    expect(summary).toEqual({ created: 0, updated: 1, skipped: 0, errors: 0 })
+    expect(await byName(ORG_A, 'Con niveles B')).toMatchObject({ priceCents: 350, stock: 4 })
+    expect(await tiersOf(id)).toHaveLength(1)
+  })
+
+  it('sin "Actualizar" el existente se omite y nada cambia', async () => {
+    await tiered('Con niveles C')
+    const summary = await run(ORG_A, [row({ name: 'Con niveles C', price: '9.00' })], false)
+    expect(summary).toEqual({ created: 0, updated: 0, skipped: 1, errors: 0 })
+    expect(await byName(ORG_A, 'Con niveles C')).toMatchObject({ priceCents: 350 })
+  })
+
+  it('la vista previa marca el error con el mensaje', async () => {
+    await tiered('Con niveles D')
+    const preview = await previewImport(db, {
+      orgId: ORG_A,
+      rows: [row({ name: 'Con niveles D', price: '8.00' })],
+    })
+    expect(preview.counts.error).toBe(1)
+    expect(preview.rows[0].errors[0].message).toBe(
+      'Tiene precios por mayor: cambia su precio desde el producto',
+    )
+  })
+
+  it('actualizar varios productos a la vez (con bloqueo ordenado por id) funciona', async () => {
+    const names = ['Lote 1', 'Lote 2', 'Lote 3']
+    for (const name of names) {
+      await createProduct(db, {
+        orgId: ORG_A,
+        userId: USER,
+        input: base({ name, priceCents: 100 }),
+      })
+    }
+    const summary = await run(
+      ORG_A,
+      names.map((name) => row({ name, price: '2.00' })),
+      true,
+    )
+    expect(summary.updated).toBe(3)
+    for (const name of names) expect((await byName(ORG_A, name)).priceCents).toBe(200)
+  })
+})
+
 describe('previewImport', () => {
   it('clasifica sin escribir nada', async () => {
     await createProduct(db, { orgId: ORG_A, userId: USER, input: base({ name: 'Previa' }) })

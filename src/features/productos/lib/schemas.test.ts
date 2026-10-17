@@ -68,6 +68,7 @@ const valid = {
   tracksStock: true,
   initialStock: '',
   minStock: '5',
+  tiers: [] as { minQty: string; price: string }[],
 }
 
 describe('productInputSchema', () => {
@@ -82,6 +83,66 @@ describe('productInputSchema', () => {
       tracksStock: true,
       initialStock: 0,
       minStock: 5,
+      tiers: [],
+    })
+  })
+
+  describe('precio por mayor (tiers)', () => {
+    const ok = [
+      { minQty: '6', price: '2.50' },
+      { minQty: '12', price: '2,30' },
+    ]
+
+    it('convierte filas a niveles en céntimos e ignora filas vacías', () => {
+      const r = productInputSchema.parse({
+        ...valid,
+        tiers: [...ok, { minQty: ' ', price: '' }],
+      })
+      expect(r.tiers).toEqual([
+        { minQty: 6, unitPriceCents: 250 },
+        { minQty: 12, unitPriceCents: 230 },
+      ])
+    })
+
+    it('una fila a medias o inválida es error', () => {
+      for (const row of [
+        { minQty: '6', price: '' },
+        { minQty: '', price: '2.50' },
+        { minQty: '2.5', price: '2.50' },
+        { minQty: '6', price: 'abc' },
+      ]) {
+        const r = productInputSchema.safeParse({ ...valid, tiers: [row] })
+        expect(r.success).toBe(false)
+        expect(r.error?.issues[0]?.path).toEqual(['tiers'])
+      }
+    })
+
+    it('valida contra el precio normal (S/ 3.50) con las reglas de validateTiers', () => {
+      const bad = (tiers: { minQty: string; price: string }[]) =>
+        productInputSchema.safeParse({ ...valid, tiers }).success
+      expect(bad([{ minQty: '6', price: '3.50' }])).toBe(false) // no abarata
+      expect(bad([{ minQty: '1', price: '2' }])).toBe(false) // minQty < 2
+      expect(
+        bad([
+          { minQty: '6', price: '2' },
+          { minQty: '6', price: '1' },
+        ]),
+      ).toBe(false) // repetida
+      expect(
+        bad([
+          { minQty: '6', price: '2' },
+          { minQty: '12', price: '2.50' },
+        ]),
+      ).toBe(false) // precio no decrece
+      expect(
+        bad(
+          Array.from({ length: 6 }, (_, i) => ({
+            minQty: String(2 + i),
+            price: String(3 - i * 0.5),
+          })),
+        ),
+      ).toBe(false)
+      expect(bad(ok)).toBe(true)
     })
   })
 

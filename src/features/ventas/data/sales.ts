@@ -235,6 +235,8 @@ export async function getSale(
       name: saleItem.productName,
       qty: saleItem.quantity,
       unitPriceCents: saleItem.unitPriceCents,
+      listUnitPriceCents: saleItem.listUnitPriceCents,
+      priceSource: saleItem.priceSource,
       lineTotalCents: saleItem.lineTotalCents,
     })
     .from(saleItem)

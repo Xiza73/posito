@@ -7,7 +7,7 @@ import { beforeAll, describe, expect, it } from 'vitest'
 import * as schema from '@/db/schema'
 import { PAYMENT_METHODS } from '@/lib/payment'
 import { updateBusinessProfile } from '@/lib/settings'
-import { CheckoutError, checkout, InsufficientStockError } from './checkout'
+import { CheckoutError, checkout, InsufficientStockError, PriceChangedError } from './checkout'
 
 // Migraciones reales sobre Postgres en memoria (PGlite), igual que src/db/schema.test.ts.
 // Nota: PGlite es una sola conexión, así que NO se puede probar concurrencia real. Las garantías
@@ -98,8 +98,22 @@ describe('checkout: camino feliz', () => {
     })
     expect(first.subtotalCents + first.igvCents).toBe(first.totalCents)
     expect(first.lines).toEqual([
-      { name: 'Inca Kola', qty: 2, unitPriceCents: 300, lineTotalCents: 600 },
-      { name: 'Pan francés', qty: 3, unitPriceCents: 30, lineTotalCents: 90 },
+      {
+        name: 'Inca Kola',
+        qty: 2,
+        unitPriceCents: 300,
+        listUnitPriceCents: 300,
+        priceSource: 'normal',
+        lineTotalCents: 600,
+      },
+      {
+        name: 'Pan francés',
+        qty: 3,
+        unitPriceCents: 30,
+        listUnitPriceCents: 30,
+        priceSource: 'normal',
+        lineTotalCents: 90,
+      },
     ])
     expect(await stockOf(inca)).toBe(8)
     expect(await stockOf(pan)).toBe(47)
@@ -309,7 +323,14 @@ describe('checkout: validación y aislamiento', () => {
       { productId: id, quantity: 3 },
     ])
     expect(s.lines).toEqual([
-      { name: 'Repetido', qty: 5, unitPriceCents: 300, lineTotalCents: 1500 },
+      {
+        name: 'Repetido',
+        qty: 5,
+        unitPriceCents: 300,
+        listUnitPriceCents: 300,
+        priceSource: 'normal',
+        lineTotalCents: 1500,
+      },
     ])
     expect(await stockOf(id)).toBe(5)
   })
@@ -337,6 +358,172 @@ describe('checkout: validación y aislamiento', () => {
     const s = await sell(forged)
     expect(s.totalCents).toBe(500)
     expect(s.lines[0].unitPriceCents).toBe(500)
+  })
+})
+
+describe('checkout: precio por mayor', () => {
+  const TIERS = [
+    { minQty: 6, unitPriceCents: 250 },
+    { minQty: 12, unitPriceCents: 230 },
+  ]
+
+  async function withTiers(
+    tiers = TIERS,
+    over: Partial<typeof schema.product.$inferInsert> = {},
+    orgId = ORG_A,
+  ) {
+    const id = await newProduct({ priceCents: 300, stock: 100, ...over }, orgId)
+    await db
+      .insert(schema.productPriceTier)
+      .values(tiers.map((t) => ({ organizationId: orgId, productId: id, ...t })))
+    return id
+  }
+
+  it('en el minQty exacto aplica el nivel a TODAS las unidades y guarda el snapshot', async () => {
+    const id = await withTiers()
+    const s = await sell([{ productId: id, quantity: 6 }])
+    expect(s.lines[0]).toMatchObject({
+      qty: 6,
+      unitPriceCents: 250,
+      listUnitPriceCents: 300,
+      priceSource: 'mayor',
+      lineTotalCents: 1500,
+    })
+    expect(s.totalCents).toBe(1500)
+  })
+
+  it('gana el nivel más alto alcanzado (8 u. con 6->2.50 y 12->2.30 = 8 x 2.50)', async () => {
+    const id = await withTiers()
+    const s8 = await sell([{ productId: id, quantity: 8 }])
+    expect(s8.lines[0]).toMatchObject({ unitPriceCents: 250, lineTotalCents: 2000 })
+    const s12 = await sell([{ productId: id, quantity: 12 }])
+    expect(s12.lines[0]).toMatchObject({ unitPriceCents: 230, lineTotalCents: 2760 })
+    expect(s12.totalCents).toBe(2760)
+  })
+
+  it('por debajo del primer nivel rige el precio normal', async () => {
+    const id = await withTiers()
+    const s = await sell([{ productId: id, quantity: 5 }])
+    expect(s.lines[0]).toMatchObject({
+      unitPriceCents: 300,
+      listUnitPriceCents: 300,
+      priceSource: 'normal',
+      lineTotalCents: 1500,
+    })
+  })
+
+  it('el cliente no puede forzar un nivel: solo manda cantidades', async () => {
+    const id = await withTiers()
+    const forged = [
+      { productId: id, quantity: 2, unitPriceCents: 1, tier: 12, priceSource: 'mayor' },
+    ]
+    const s = await sell(forged)
+    expect(s.lines[0]).toMatchObject({ unitPriceCents: 300, priceSource: 'normal' })
+    expect(s.totalCents).toBe(600)
+  })
+
+  it('los niveles de OTRA bodega se ignoran', async () => {
+    const id = await newProduct({ priceCents: 300, stock: 100 })
+    // Fila inconsistente a propósito (niveles con organizationId ajeno sobre un producto de A)
+    await db
+      .insert(schema.productPriceTier)
+      .values({ organizationId: ORG_B, productId: id, minQty: 2, unitPriceCents: 1 })
+    const s = await sell([{ productId: id, quantity: 10 }])
+    expect(s.lines[0]).toMatchObject({ unitPriceCents: 300, priceSource: 'normal' })
+  })
+
+  it('las líneas repetidas del mismo producto usan la cantidad SUMADA para el nivel', async () => {
+    const id = await withTiers()
+    const s = await sell([
+      { productId: id, quantity: 4 },
+      { productId: id, quantity: 4 },
+    ])
+    expect(s.lines).toHaveLength(1)
+    expect(s.lines[0]).toMatchObject({ qty: 8, unitPriceCents: 250, lineTotalCents: 2000 })
+  })
+
+  it('mezcla productos con y sin niveles; la fila cumple los CHECK y los totales cuadran', async () => {
+    const a = await withTiers(TIERS, { name: 'Con niveles' })
+    const b = await newProduct({ name: 'Sin niveles', priceCents: 150, stock: 50 })
+    const s = await sell([
+      { productId: a, quantity: 7 },
+      { productId: b, quantity: 3 },
+    ])
+    expect(s.totalCents).toBe(7 * 250 + 3 * 150)
+    expect(s.subtotalCents + s.igvCents).toBe(s.totalCents)
+    const rows = await db.select().from(schema.saleItem).where(eq(schema.saleItem.saleId, s.id))
+    for (const r of rows) {
+      expect(r.lineTotalCents).toBe(r.unitPriceCents * r.quantity)
+      expect(
+        r.priceSource === 'mayor'
+          ? r.unitPriceCents < r.listUnitPriceCents
+          : r.unitPriceCents === r.listUnitPriceCents,
+      ).toBe(true)
+    }
+  })
+
+  it('el precio normal se congela: cambiar niveles o precio después no altera la venta ni el reintento', async () => {
+    const id = await withTiers()
+    const saleId = uuid()
+    const first = await sell([{ productId: id, quantity: 6 }], { saleId })
+    await db.delete(schema.productPriceTier).where(eq(schema.productPriceTier.productId, id))
+    await db.update(schema.product).set({ priceCents: 999 }).where(eq(schema.product.id, id))
+    const retry = await sell([{ productId: id, quantity: 6 }], { saleId })
+    expect(retry.lines).toEqual(first.lines)
+    expect(retry.totalCents).toBe(1500)
+    expect(retry.lines[0].priceSource).toBe('mayor')
+  })
+
+  it('un nivel que no abarata (precio >= normal) se ignora', async () => {
+    const id = await withTiers([{ minQty: 2, unitPriceCents: 350 }])
+    const s = await sell([{ productId: id, quantity: 3 }])
+    expect(s.lines[0]).toMatchObject({ unitPriceCents: 300, priceSource: 'normal' })
+  })
+})
+
+describe('checkout: guard expectedTotalCents', () => {
+  it('total distinto: rechaza con PriceChangedError y no escribe NADA (ni correlativo)', async () => {
+    const id = await newProduct({ priceCents: 300, stock: 10 })
+    const [sales, items, moves, series] = [
+      await count(schema.sale),
+      await count(schema.saleItem),
+      await count(schema.stockMovement),
+      await db.select().from(schema.receiptSeries),
+    ]
+    const err = await sell([{ productId: id, quantity: 2 }], { expectedTotalCents: 500 }).catch(
+      (e) => e,
+    )
+    expect(err).toBeInstanceOf(PriceChangedError)
+    expect(err.message).toBe('Los precios cambiaron. Revisa el ticket antes de cobrar.')
+    expect(await count(schema.sale)).toBe(sales)
+    expect(await count(schema.saleItem)).toBe(items)
+    expect(await count(schema.stockMovement)).toBe(moves)
+    expect(await db.select().from(schema.receiptSeries)).toEqual(series)
+    expect(await stockOf(id)).toBe(10)
+  })
+
+  it('total que coincide: cobra normalmente (con nivel por mayor incluido)', async () => {
+    const id = await newProduct({ priceCents: 300, stock: 50 })
+    await db
+      .insert(schema.productPriceTier)
+      .values({ organizationId: ORG_A, productId: id, minQty: 6, unitPriceCents: 250 })
+    const s = await sell([{ productId: id, quantity: 6 }], { expectedTotalCents: 1500 })
+    expect(s.totalCents).toBe(1500)
+    // Con el catálogo viejo (sin nivel) el cajero vería 1800: se rechaza
+    await expect(
+      sell([{ productId: id, quantity: 6 }], { expectedTotalCents: 1800 }),
+    ).rejects.toBeInstanceOf(PriceChangedError)
+  })
+
+  it('el reintento de una venta ya guardada ignora el guard y devuelve la venta almacenada', async () => {
+    const id = await newProduct({ priceCents: 300, stock: 10 })
+    const saleId = uuid()
+    const first = await sell([{ productId: id, quantity: 1 }], { saleId, expectedTotalCents: 300 })
+    await db.update(schema.product).set({ priceCents: 999 }).where(eq(schema.product.id, id))
+    const retry = await sell([{ productId: id, quantity: 1 }], { saleId, expectedTotalCents: 999 })
+    expect(retry.id).toBe(first.id)
+    expect(retry.totalCents).toBe(300)
+    expect(await stockOf(id)).toBe(9)
   })
 })
 

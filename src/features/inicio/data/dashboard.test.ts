@@ -87,6 +87,7 @@ async function insertSale(f: Fixture): Promise<string> {
         productId: i.productId,
         productName: i.name,
         unitPriceCents: i.unitPriceCents,
+        listUnitPriceCents: i.unitPriceCents,
         quantity: i.qty,
         lineTotalCents: i.unitPriceCents * i.qty,
       })),
