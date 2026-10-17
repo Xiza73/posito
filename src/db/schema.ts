@@ -108,10 +108,40 @@ export const productImageUpload = pgTable(
     userId: text()
       .notNull()
       .references(() => user.id, { onDelete: 'cascade' }),
+    // Destino fijado al pedir la subida: 'main' (product.image_path) o 'gallery' (product_photo)
+    kind: text().$type<'main' | 'gallery'>().default('main').notNull(),
     createdAt: createdAt(),
     consumedAt: timestamp({ withTimezone: true }),
   },
-  (t) => [index('product_image_upload_org_idx').on(t.organizationId, t.consumedAt, t.createdAt)],
+  (t) => [
+    index('product_image_upload_org_idx').on(t.organizationId, t.consumedAt, t.createdAt),
+    check('product_image_upload_kind', sql`${t.kind} in ('main', 'gallery')`),
+  ],
+)
+
+// Fotos extra (galería, máx. 8) para la tienda pública. El id ES el uuid de la imagen. `position`
+// 0..7 sin huecos (se compacta al quitar). Drizzle no soporta UNIQUE DEFERRABLE: los intercambios
+// se hacen borrando y reinsertando la fila dentro de la transacción (ver data/gallery.ts).
+export const productPhoto = pgTable(
+  'product_photo',
+  {
+    id: uuid().primaryKey(),
+    organizationId: orgId(),
+    productId: uuid()
+      .notNull()
+      .references(() => product.id, { onDelete: 'cascade' }),
+    imagePath: text().notNull(),
+    position: integer().notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    uniqueIndex('product_photo_product_position_uq').on(t.productId, t.position),
+    check('product_photo_position_range', sql`${t.position} between 0 and 7`),
+    check(
+      'product_photo_image_path_format',
+      sql`${t.imagePath} ~ '^[A-Za-z0-9_-]+/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'`,
+    ),
+  ],
 )
 
 export const customer = pgTable(

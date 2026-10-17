@@ -10,7 +10,8 @@ type Props = {
   productId: string
   productName: string
   imageBase: string
-  initialPath: string | null
+  path: string | null
+  onPathChange: (path: string | null) => void
 }
 
 const UPLOAD_HEADERS = { 'content-type': 'image/webp', 'cache-control': 'max-age=31536000' }
@@ -21,9 +22,14 @@ async function put(url: string, blob: Blob) {
 }
 
 /** Foto del producto: sube/cambia/quita directo contra Storage; no forma parte del form de datos. */
-export function ProductImageField({ productId, productName, imageBase, initialPath }: Props) {
+export function ProductImageField({
+  productId,
+  productName,
+  imageBase,
+  path,
+  onPathChange: setPath,
+}: Props) {
   const inputRef = useRef<HTMLInputElement>(null)
-  const [path, setPath] = useState(initialPath)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 

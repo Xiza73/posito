@@ -6,7 +6,7 @@ import { SubmitButton } from '@/components/ui/submit-button'
 import { createProductAction, type FormState, updateProductAction } from '../actions'
 import type { ProductRow } from '../data/products'
 import { centsToPriceInput } from '../lib/schemas'
-import { ProductImageField } from './product-image-field'
+import { ProductPhotos } from './product-photos'
 
 const INITIAL: FormState = { ok: false }
 
@@ -86,7 +86,7 @@ function ProductForm({
         {/* La foto se sube contra Storage con el producto ya creado: en el alta solo se avisa */}
         {imageBase ? (
           product ? (
-            <ProductImageField
+            <ProductPhotos
               productId={product.id}
               productName={product.name}
               imageBase={imageBase}
