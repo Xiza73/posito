@@ -22,6 +22,8 @@ export type SalesFilters = {
   productId?: string
   /** "B001-00038" o solo el número. */
   receipt?: string
+  /** Solo ventas con alguna línea de precio editado a mano (price_source = manual). */
+  edited?: boolean
 }
 
 // Un valor inválido en la URL se descarta (como si no estuviera) en vez de romper la página.
@@ -41,6 +43,7 @@ export const salesSearchParamsSchema = z.object({
   cajero: optional(z.string().min(1).max(64)),
   producto: optional(z.uuid()),
   boleta: optional(z.string().trim().min(1).max(20)),
+  editado: optional(z.literal('1')),
   pagina: optional(z.coerce.number().int().min(1).max(100_000)),
 })
 
@@ -74,6 +77,7 @@ export function parseSalesSearchParams(
       cashierId: p.cajero,
       productId: p.producto,
       receipt: p.boleta,
+      edited: p.editado === '1' ? true : undefined,
     },
     page: p.pagina ?? 1,
   }
@@ -87,6 +91,7 @@ export function salesQueryString(filters: SalesFilters, page?: number): string {
   if (filters.cashierId) params.set('cajero', filters.cashierId)
   if (filters.productId) params.set('producto', filters.productId)
   if (filters.receipt) params.set('boleta', filters.receipt)
+  if (filters.edited) params.set('editado', '1')
   if (page && page > 1) params.set('pagina', String(page))
   return params.toString()
 }

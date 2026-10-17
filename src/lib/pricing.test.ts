@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { MAX_TIERS, type PriceTier, unitPriceFor, validateTiers } from './pricing'
+import { MAX_TIERS, type PriceTier, resolveLine, unitPriceFor, validateTiers } from './pricing'
 
 const tiers: PriceTier[] = [
   { minQty: 6, unitPriceCents: 250 },
@@ -122,5 +122,69 @@ describe('validateTiers', () => {
       Array.from({ length: n }, (_, i) => ({ minQty: 2 + i, unitPriceCents: 290 - i * 10 }))
     expect(validateTiers(base, make(MAX_TIERS))).toEqual([])
     expect(validateTiers(base, make(MAX_TIERS + 1)).join()).toMatch(/Máximo 5/)
+  })
+})
+
+describe('resolveLine', () => {
+  const input = { basePriceCents: 300, tiers }
+
+  it('sin total manual usa el precio automático (normal o por mayor)', () => {
+    expect(resolveLine(input, 2)).toEqual({
+      unitPriceCents: 300,
+      lineTotalCents: 600,
+      source: 'normal',
+    })
+    expect(resolveLine(input, 6, null)).toEqual({
+      unitPriceCents: 250,
+      lineTotalCents: 1500,
+      source: 'mayor',
+      tier: { minQty: 6 },
+    })
+  })
+
+  it('el total manual reemplaza al nivel por mayor, hacia arriba o hacia abajo', () => {
+    expect(resolveLine(input, 6, 1000)).toEqual({
+      unitPriceCents: 166,
+      lineTotalCents: 1000,
+      source: 'manual',
+    })
+    expect(resolveLine(input, 6, 2000).lineTotalCents).toBe(2000)
+  })
+
+  it('el unitario es floor(total / cantidad): 3 unidades a S/ 10.00 -> 333 y total 1000', () => {
+    expect(resolveLine(input, 3, 1000)).toEqual({
+      unitPriceCents: 333,
+      lineTotalCents: 1000,
+      source: 'manual',
+    })
+  })
+
+  it('un total menor que la cantidad deja unitario 0 (informativo) sin romper el importe', () => {
+    expect(resolveLine(input, 5, 3)).toMatchObject({ unitPriceCents: 0, lineTotalCents: 3 })
+  })
+})
+
+describe('resolveLine: normalización', () => {
+  const input = { basePriceCents: 300, tiers }
+
+  it('un total manual igual al automático devuelve el resultado automático (normal)', () => {
+    expect(resolveLine(input, 2, 600)).toEqual({
+      unitPriceCents: 300,
+      lineTotalCents: 600,
+      source: 'normal',
+    })
+  })
+
+  it('un total manual igual al automático por mayor devuelve mayor, no manual', () => {
+    expect(resolveLine(input, 6, 1500)).toEqual({
+      unitPriceCents: 250,
+      lineTotalCents: 1500,
+      source: 'mayor',
+      tier: { minQty: 6 },
+    })
+  })
+
+  it('un total distinto al automático sigue siendo manual', () => {
+    expect(resolveLine(input, 6, 1501).source).toBe('manual')
   })
 })

@@ -87,6 +87,26 @@ describe('receiptLines', () => {
     expect(r[1]).toMatch(/^ {2}8 × S\/.2\.50 \(por mayor\)\|$/)
   })
 
+  it('una línea con precio editado imprime solo el importe final (sin exponer el descuento)', () => {
+    const manual: SaleSummary = {
+      ...sale,
+      lines: [
+        {
+          name: 'Inca Kola 500 ml',
+          qty: 3,
+          unitPriceCents: 333,
+          listUnitPriceCents: 300,
+          priceSource: 'manual',
+          lineTotalCents: 1000,
+        },
+      ],
+    }
+    const r = rows(receiptLines(manual))
+    expect(r[0]).toMatch(/^3 × Inca Kola 500 ml\|S\/.10\.00$/)
+    expect(r[1]).toMatch(/^Subtotal/)
+    expect(r.join('\n')).not.toMatch(/editado|mayor|3\.33|manual/i)
+  })
+
   it('incluye subtotal, IGV, total, pago y cajero', () => {
     const r = rows(lines).join('\n')
     expect(r).toMatch(/Subtotal\|S\/.5\.85/)

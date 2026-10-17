@@ -162,13 +162,20 @@ export default async function VentaPage({ params }: { params: Promise<{ id: stri
                       {formatCents((l.listUnitPriceCents - l.unitPriceCents) * l.qty)}
                     </span>
                   ) : null}
+                  {l.priceSource === 'manual' ? (
+                    <span className="mt-0.5 block text-muted text-xs">
+                      Precio editado: normal {formatCents(l.listUnitPriceCents * l.qty)}, cobrado{' '}
+                      {formatCents(l.lineTotalCents)}
+                      {sale.cashierName ? `. Editado por ${sale.cashierName}` : ''}
+                    </span>
+                  ) : null}
                 </td>
                 <td className="px-4 py-3 text-right font-mono">{l.qty}</td>
                 <td className="hidden px-4 py-3 text-right font-mono sm:table-cell">
                   {l.priceSource === 'mayor' ? (
                     <s className="mr-1.5 text-muted">{formatCents(l.listUnitPriceCents)}</s>
                   ) : null}
-                  {formatCents(l.unitPriceCents)}
+                  {l.priceSource === 'manual' ? '—' : formatCents(l.unitPriceCents)}
                 </td>
                 <td className="px-4 py-3 text-right font-mono">{formatCents(l.lineTotalCents)}</td>
               </tr>

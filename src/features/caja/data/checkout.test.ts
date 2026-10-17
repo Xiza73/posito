@@ -3,11 +3,17 @@ import { PGlite } from '@electric-sql/pglite'
 import { eq } from 'drizzle-orm'
 import { drizzle } from 'drizzle-orm/pglite'
 import { migrate } from 'drizzle-orm/pglite/migrator'
-import { beforeAll, describe, expect, it } from 'vitest'
+import { afterEach, beforeAll, describe, expect, it } from 'vitest'
 import * as schema from '@/db/schema'
 import { PAYMENT_METHODS } from '@/lib/payment'
-import { updateBusinessProfile } from '@/lib/settings'
-import { CheckoutError, checkout, InsufficientStockError, PriceChangedError } from './checkout'
+import { updateBusinessProfile, updateSettings } from '@/lib/settings'
+import {
+  CheckoutError,
+  checkout,
+  InsufficientStockError,
+  ManualPriceDisabledError,
+  PriceChangedError,
+} from './checkout'
 
 // Migraciones reales sobre Postgres en memoria (PGlite), igual que src/db/schema.test.ts.
 // Nota: PGlite es una sola conexión, así que NO se puede probar concurrencia real. Las garantías
@@ -47,7 +53,7 @@ const count = async (
 ) => (await db.select().from(table)).length
 
 const sell = (
-  items: { productId: string; quantity: number }[],
+  items: { productId: string; quantity: number; lineTotalCents?: number }[],
   over: Partial<Parameters<typeof checkout>[1]> = {},
 ) =>
   checkout(db, {
@@ -524,6 +530,189 @@ describe('checkout: guard expectedTotalCents', () => {
     expect(retry.id).toBe(first.id)
     expect(retry.totalCents).toBe(300)
     expect(await stockOf(id)).toBe(9)
+  })
+})
+
+describe('checkout: precio manual (allowManualPrice)', () => {
+  const allow = (on: boolean) => updateSettings(db, ORG_A, { allowManualPrice: on })
+  const lineOf = async (saleId: string) =>
+    (await db.select().from(schema.saleItem).where(eq(schema.saleItem.saleId, saleId)))[0]
+
+  afterEach(() => allow(false))
+
+  it('con el ajuste apagado rechaza TODA la venta y no escribe nada', async () => {
+    const id = await newProduct({ priceCents: 300, stock: 10 })
+    const [sales, items, moves, series] = [
+      await count(schema.sale),
+      await count(schema.saleItem),
+      await count(schema.stockMovement),
+      await db.select().from(schema.receiptSeries),
+    ]
+    const err = await sell([{ productId: id, quantity: 2, lineTotalCents: 100 }]).catch((e) => e)
+    expect(err).toBeInstanceOf(ManualPriceDisabledError)
+    expect(err.message).toBe('La edición de precios no está habilitada')
+    expect(await count(schema.sale)).toBe(sales)
+    expect(await count(schema.saleItem)).toBe(items)
+    expect(await count(schema.stockMovement)).toBe(moves)
+    expect(await db.select().from(schema.receiptSeries)).toEqual(series)
+    expect(await stockOf(id)).toBe(10)
+  })
+
+  it('ventas sin total manual no dependen del ajuste', async () => {
+    const id = await newProduct({ priceCents: 300, stock: 10 })
+    const s = await sell([{ productId: id, quantity: 1 }])
+    expect(s.lines[0].priceSource).toBe('normal')
+  })
+
+  it('con el ajuste encendido guarda el total escrito, hacia abajo o hacia arriba', async () => {
+    await allow(true)
+    const id = await newProduct({ priceCents: 300, stock: 20 })
+    const down = await sell([{ productId: id, quantity: 2, lineTotalCents: 450 }])
+    expect(down.totalCents).toBe(450)
+    expect(down.lines[0]).toMatchObject({
+      priceSource: 'manual',
+      lineTotalCents: 450,
+      unitPriceCents: 225,
+      listUnitPriceCents: 300,
+      qty: 2,
+    })
+    const up = await sell([{ productId: id, quantity: 1, lineTotalCents: 1000 }])
+    expect(up.totalCents).toBe(1000)
+    expect(up.lines[0]).toMatchObject({ priceSource: 'manual', lineTotalCents: 1000 })
+    expect(up.subtotalCents + up.igvCents).toBe(up.totalCents)
+    expect(await stockOf(id)).toBe(17)
+  })
+
+  it('un total manual reemplaza al nivel por mayor', async () => {
+    await allow(true)
+    const id = await newProduct({ priceCents: 300, stock: 50 })
+    await db
+      .insert(schema.productPriceTier)
+      .values({ organizationId: ORG_A, productId: id, minQty: 6, unitPriceCents: 250 })
+    const s = await sell([{ productId: id, quantity: 6, lineTotalCents: 1700 }])
+    expect(s.totalCents).toBe(1700)
+    expect(s.lines[0]).toMatchObject({ priceSource: 'manual', lineTotalCents: 1700 })
+  })
+
+  it('total no divisible entre la cantidad: unitario = floor y la fila cumple los CHECK', async () => {
+    await allow(true)
+    const id = await newProduct({ priceCents: 300, stock: 10 })
+    const s = await sell([{ productId: id, quantity: 3, lineTotalCents: 1000 }])
+    const row = await lineOf(s.id)
+    expect(row).toMatchObject({ unitPriceCents: 333, lineTotalCents: 1000, priceSource: 'manual' })
+    expect(s.totalCents).toBe(1000)
+  })
+
+  it('mezcla líneas manuales y automáticas; los totales salen de los importes de línea', async () => {
+    await allow(true)
+    const a = await newProduct({ priceCents: 300, stock: 10 })
+    const b = await newProduct({ priceCents: 50, stock: 10 })
+    const s = await sell([
+      { productId: a, quantity: 3, lineTotalCents: 1000 },
+      { productId: b, quantity: 2 },
+    ])
+    expect(s.totalCents).toBe(1100)
+    expect(s.lines.map((l) => l.priceSource).sort()).toEqual(['manual', 'normal'])
+  })
+
+  it('un producto repetido con total manual se rechaza (sin escribir) y sin manual se sigue sumando', async () => {
+    await allow(true)
+    const id = await newProduct({ priceCents: 300, stock: 10 })
+    const sales = await count(schema.sale)
+    for (const items of [
+      [
+        { productId: id, quantity: 1, lineTotalCents: 100 },
+        { productId: id, quantity: 1 },
+      ],
+      [
+        { productId: id, quantity: 1 },
+        { productId: id, quantity: 1, lineTotalCents: 100 },
+      ],
+      [
+        { productId: id, quantity: 1, lineTotalCents: 100 },
+        { productId: id, quantity: 1, lineTotalCents: 100 },
+      ],
+    ]) {
+      const err = await sell(items).catch((e) => e)
+      expect(err).toBeInstanceOf(CheckoutError)
+      expect(err.message).toBe('Une las líneas antes de editar el precio')
+    }
+    expect(await count(schema.sale)).toBe(sales)
+    const merged = await sell([
+      { productId: id, quantity: 1 },
+      { productId: id, quantity: 2 },
+    ])
+    expect(merged.totalCents).toBe(900)
+  })
+
+  it('rechaza totales manuales inválidos (0, negativos, no enteros, fuera de rango)', async () => {
+    await allow(true)
+    const id = await newProduct({ priceCents: 300, stock: 10 })
+    for (const lineTotalCents of [0, -5, 1.5, 2_147_483_648]) {
+      await expect(sell([{ productId: id, quantity: 1, lineTotalCents }])).rejects.toBeInstanceOf(
+        CheckoutError,
+      )
+    }
+  })
+
+  it('el guard expectedTotalCents aplica sobre el total con importes manuales', async () => {
+    await allow(true)
+    const id = await newProduct({ priceCents: 300, stock: 10 })
+    const items = [{ productId: id, quantity: 2, lineTotalCents: 450 }]
+    await expect(sell(items, { expectedTotalCents: 600 })).rejects.toBeInstanceOf(PriceChangedError)
+    const s = await sell(items, { expectedTotalCents: 450 })
+    expect(s.totalCents).toBe(450)
+  })
+
+  it('el reintento idempotente devuelve la venta manual aunque el ajuste ya esté apagado', async () => {
+    await allow(true)
+    const id = await newProduct({ priceCents: 300, stock: 10 })
+    const saleId = uuid()
+    const items = [{ productId: id, quantity: 2, lineTotalCents: 450 }]
+    const first = await sell(items, { saleId, expectedTotalCents: 450 })
+    await allow(false)
+    const retry = await sell(items, { saleId, expectedTotalCents: 450 })
+    expect(retry.id).toBe(first.id)
+    expect(retry.lines[0]).toMatchObject({ priceSource: 'manual', lineTotalCents: 450 })
+    expect(await stockOf(id)).toBe(8)
+    // Una venta NUEVA con el ajuste apagado sí se rechaza
+    await expect(sell(items)).rejects.toBeInstanceOf(ManualPriceDisabledError)
+  })
+
+  it('el ajuste de OTRA bodega no habilita esta', async () => {
+    await updateSettings(db, ORG_B, { allowManualPrice: true })
+    const id = await newProduct({ priceCents: 300, stock: 10 })
+    await expect(
+      sell([{ productId: id, quantity: 1, lineTotalCents: 100 }]),
+    ).rejects.toBeInstanceOf(ManualPriceDisabledError)
+    await updateSettings(db, ORG_B, { allowManualPrice: false })
+  })
+
+  it('la suma de importes por encima del máximo de la columna se rechaza', async () => {
+    await allow(true)
+    const a = await newProduct({ priceCents: 300, stock: 10 })
+    const b = await newProduct({ priceCents: 300, stock: 10 })
+    await expect(
+      sell([
+        { productId: a, quantity: 1, lineTotalCents: 2_000_000_000 },
+        { productId: b, quantity: 1, lineTotalCents: 2_000_000_000 },
+      ]),
+    ).rejects.toThrow('supera el máximo')
+  })
+})
+
+describe('checkout: normalización del precio manual', () => {
+  it('un total manual igual al automático se guarda como normal/mayor, no como manual', async () => {
+    await updateSettings(db, ORG_A, { allowManualPrice: true })
+    const id = await newProduct({ priceCents: 300, stock: 50 })
+    await db
+      .insert(schema.productPriceTier)
+      .values({ organizationId: ORG_A, productId: id, minQty: 6, unitPriceCents: 250 })
+    const normal = await sell([{ productId: id, quantity: 2, lineTotalCents: 600 }])
+    expect(normal.lines[0]).toMatchObject({ priceSource: 'normal', lineTotalCents: 600 })
+    const mayor = await sell([{ productId: id, quantity: 6, lineTotalCents: 1500 }])
+    expect(mayor.lines[0]).toMatchObject({ priceSource: 'mayor', lineTotalCents: 1500 })
+    await updateSettings(db, ORG_A, { allowManualPrice: false })
   })
 })
 

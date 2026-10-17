@@ -19,6 +19,10 @@ type Props = {
   onClearCustomer: () => void
   onPay: (method: PaymentMethod) => void
   onChangeQty: (key: string, delta: 1 | -1) => void
+  allowManualPrice: boolean
+  onSetManual: (id: string, cents: number | null) => void
+  /** Ticket congelado: tampoco se editan precios. */
+  locked: boolean
   onClear: () => void
   onCharge: () => void
 }
@@ -36,6 +40,9 @@ export function TicketPanel({
   onClearCustomer,
   onPay,
   onChangeQty,
+  allowManualPrice,
+  onSetManual,
+  locked,
   onClear,
   onCharge,
 }: Props) {
@@ -66,7 +73,13 @@ export function TicketPanel({
             Toca un producto o escanea un código para empezar
           </p>
         ) : (
-          <TicketLines lines={lines} onChangeQty={onChangeQty} />
+          <TicketLines
+            lines={lines}
+            onChangeQty={onChangeQty}
+            allowManualPrice={allowManualPrice}
+            onSetManual={onSetManual}
+            locked={locked || pending}
+          />
         )}
       </div>
 
@@ -81,7 +94,9 @@ export function TicketPanel({
         </div>
         <div className="flex items-baseline justify-between">
           <span className="font-semibold">Total</span>
-          <span className="font-mono text-2xl">{formatCents(totals.total)}</span>
+          <span className="font-mono text-2xl" aria-live="polite">
+            {formatCents(totals.total)}
+          </span>
         </div>
         <PaymentMethods value={pay} onChange={onPay} />
         {error ? (

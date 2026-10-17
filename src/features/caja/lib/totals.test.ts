@@ -54,3 +54,17 @@ describe('totals', () => {
     ).toBe(5)
   })
 })
+
+describe('totals con importe de línea manual', () => {
+  it('usa el importe manual en lugar de unitario × cantidad', () => {
+    const lines = [
+      { unitPriceCents: 333, qty: 3, totalCents: 1000 },
+      { unitPriceCents: 100, qty: 1 },
+    ]
+    expect(lineTotalCents(lines[0])).toBe(1000)
+    expect(totalCents(lines)).toBe(1100)
+    const t = computeTotals(lines)
+    expect(t.total).toBe(1100)
+    expect(t.subtotal + t.igv).toBe(t.total)
+  })
+})

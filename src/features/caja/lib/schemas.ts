@@ -12,7 +12,14 @@ export const checkoutInputSchema = z.object({
   /** Total que ve el cajero: solo un guard contra precios desactualizados, nunca un precio. */
   expectedTotalCents: z.int().min(0).max(2_147_483_647),
   items: z
-    .array(z.object({ productId: z.uuid(), quantity: z.int().min(1).max(MAX_QTY) }))
+    .array(
+      z.object({
+        productId: z.uuid(),
+        quantity: z.int().min(1).max(MAX_QTY),
+        /** Total de la línea editado en la Caja (precio manual). Solo vale si la bodega lo permite. */
+        lineTotalCents: z.int().min(1).max(2_147_483_647).optional(),
+      }),
+    )
     .min(1)
     .max(100),
 })

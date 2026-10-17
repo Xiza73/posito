@@ -37,6 +37,9 @@ export type Dashboard = {
   voidedCount: number
   /** Ventas por validar de la bodega; null si el rol no puede aprobar. */
   pendingCount: number | null
+  /** Ventas del período con precio editado a mano (completadas y por validar; sin anuladas) y su
+   *  diferencia neta (positivo = descuento). null = el rol solo ve lo suyo (cajero). */
+  editedPrices: { count: number; differenceCents: number } | null
   stock: { low: StockAlert; out: StockAlert }
 }
 
@@ -81,99 +84,128 @@ export async function getDashboard(
   const isLow = and(sql`${product.stock} > 0`, sql`${product.stock} <= ${product.minStock}`) as SQL
   const isOut = sql`${product.stock} = 0`
 
-  const [summaryRows, bucketRows, topRows, stockCounts, lowNames, outNames, pendingRows] =
-    await Promise.all([
-      // Período actual + previo en UNA consulta (rangos contiguos)
-      db
-        .select({
-          count: num(sql`count(*) filter (where ${done} and ${inCur})`),
-          totalCents: num(
-            sql`coalesce(sum(${sale.totalCents}) filter (where ${done} and ${inCur}), 0)`,
-          ),
-          efectivo: num(
-            sql`coalesce(sum(${sale.totalCents}) filter (where ${done} and ${inCur} and ${sale.paymentMethod} = 'efectivo'), 0)`,
-          ),
-          yape_plin: num(
-            sql`coalesce(sum(${sale.totalCents}) filter (where ${done} and ${inCur} and ${sale.paymentMethod} = 'yape_plin'), 0)`,
-          ),
-          tarjeta: num(
-            sql`coalesce(sum(${sale.totalCents}) filter (where ${done} and ${inCur} and ${sale.paymentMethod} = 'tarjeta'), 0)`,
-          ),
-          voidedCount: num(sql`count(*) filter (where ${sale.status} = 'anulada' and ${inCur})`),
-          prevCount: num(sql`count(*) filter (where ${done} and ${inPrev})`),
-          prevTotalCents: num(
-            sql`coalesce(sum(${sale.totalCents}) filter (where ${done} and ${inPrev}), 0)`,
-          ),
-        })
-        .from(sale)
-        .where(and(scope, gte(sale.createdAt, prev.start), lt(sale.createdAt, cur.end))),
-
-      // Ventas por hora (un día) o por día (7 días), siempre en hora de Lima
-      db
-        .select({
-          bucket:
-            kind === 'hour'
-              ? num(sql`extract(hour from ${limaTime})`)
-              : sql<string>`to_char(${limaTime}, 'YYYY-MM-DD')`,
-          cents: num(sql`sum(${sale.totalCents})`),
-          count: num(sql`count(*)`),
-        })
-        .from(sale)
-        .where(and(scope, done, inCur))
-        .groupBy(
-          kind === 'hour'
-            ? sql`extract(hour from ${limaTime})`
-            : sql`to_char(${limaTime}, 'YYYY-MM-DD')`,
+  const [
+    summaryRows,
+    bucketRows,
+    topRows,
+    stockCounts,
+    lowNames,
+    outNames,
+    pendingRows,
+    editedRows,
+  ] = await Promise.all([
+    // Período actual + previo en UNA consulta (rangos contiguos)
+    db
+      .select({
+        count: num(sql`count(*) filter (where ${done} and ${inCur})`),
+        totalCents: num(
+          sql`coalesce(sum(${sale.totalCents}) filter (where ${done} and ${inCur}), 0)`,
         ),
+        efectivo: num(
+          sql`coalesce(sum(${sale.totalCents}) filter (where ${done} and ${inCur} and ${sale.paymentMethod} = 'efectivo'), 0)`,
+        ),
+        yape_plin: num(
+          sql`coalesce(sum(${sale.totalCents}) filter (where ${done} and ${inCur} and ${sale.paymentMethod} = 'yape_plin'), 0)`,
+        ),
+        tarjeta: num(
+          sql`coalesce(sum(${sale.totalCents}) filter (where ${done} and ${inCur} and ${sale.paymentMethod} = 'tarjeta'), 0)`,
+        ),
+        voidedCount: num(sql`count(*) filter (where ${sale.status} = 'anulada' and ${inCur})`),
+        prevCount: num(sql`count(*) filter (where ${done} and ${inPrev})`),
+        prevTotalCents: num(
+          sql`coalesce(sum(${sale.totalCents}) filter (where ${done} and ${inPrev}), 0)`,
+        ),
+      })
+      .from(sale)
+      .where(and(scope, gte(sale.createdAt, prev.start), lt(sale.createdAt, cur.end))),
 
-      // Top productos: por unidades, desempate por importe; nombre = el snapshot más reciente
-      db
-        .select({
-          productId: saleItem.productId,
-          name: sql<string>`(array_agg(${saleItem.productName} order by ${sale.createdAt} desc))[1]`,
-          units: num(sql`sum(${saleItem.quantity})`),
-          cents: num(sql`sum(${saleItem.lineTotalCents})`),
-        })
-        .from(saleItem)
-        .innerJoin(sale, eq(sale.id, saleItem.saleId))
-        .where(and(scope, done, inCur))
-        .groupBy(saleItem.productId)
-        .orderBy(
-          desc(sql`sum(${saleItem.quantity})`),
-          desc(sql`sum(${saleItem.lineTotalCents})`),
-          asc(saleItem.productId),
-        )
-        .limit(TOP_PRODUCTS_LIMIT),
+    // Ventas por hora (un día) o por día (7 días), siempre en hora de Lima
+    db
+      .select({
+        bucket:
+          kind === 'hour'
+            ? num(sql`extract(hour from ${limaTime})`)
+            : sql<string>`to_char(${limaTime}, 'YYYY-MM-DD')`,
+        cents: num(sql`sum(${sale.totalCents})`),
+        count: num(sql`count(*)`),
+      })
+      .from(sale)
+      .where(and(scope, done, inCur))
+      .groupBy(
+        kind === 'hour'
+          ? sql`extract(hour from ${limaTime})`
+          : sql`to_char(${limaTime}, 'YYYY-MM-DD')`,
+      ),
 
-      // Stock: de toda la bodega (el cajero también lo ve)
-      db
-        .select({
-          low: num(sql`count(*) filter (where ${isLow})`),
-          out: num(sql`count(*) filter (where ${isOut})`),
-        })
-        .from(product)
-        .where(trackedProducts),
-      db
-        .select({ name: product.name })
-        .from(product)
-        .where(and(trackedProducts, isLow))
-        .orderBy(asc(product.stock), asc(product.name), asc(product.id))
-        .limit(STOCK_NAMES_LIMIT),
-      db
-        .select({ name: product.name })
-        .from(product)
-        .where(and(trackedProducts, isOut))
-        .orderBy(asc(product.name), asc(product.id))
-        .limit(STOCK_NAMES_LIMIT),
+    // Top productos: por unidades, desempate por importe; nombre = el snapshot más reciente
+    db
+      .select({
+        productId: saleItem.productId,
+        name: sql<string>`(array_agg(${saleItem.productName} order by ${sale.createdAt} desc))[1]`,
+        units: num(sql`sum(${saleItem.quantity})`),
+        cents: num(sql`sum(${saleItem.lineTotalCents})`),
+      })
+      .from(saleItem)
+      .innerJoin(sale, eq(sale.id, saleItem.saleId))
+      .where(and(scope, done, inCur))
+      .groupBy(saleItem.productId)
+      .orderBy(
+        desc(sql`sum(${saleItem.quantity})`),
+        desc(sql`sum(${saleItem.lineTotalCents})`),
+        asc(saleItem.productId),
+      )
+      .limit(TOP_PRODUCTS_LIMIT),
 
-      // Por validar: de la bodega (no del período); solo si el rol puede aprobar
-      canApprove
-        ? db
-            .select({ n: num(sql`count(*)`) })
-            .from(sale)
-            .where(and(eq(sale.organizationId, orgId), eq(sale.status, 'pendiente')))
-        : Promise.resolve(null),
-    ])
+    // Stock: de toda la bodega (el cajero también lo ve)
+    db
+      .select({
+        low: num(sql`count(*) filter (where ${isLow})`),
+        out: num(sql`count(*) filter (where ${isOut})`),
+      })
+      .from(product)
+      .where(trackedProducts),
+    db
+      .select({ name: product.name })
+      .from(product)
+      .where(and(trackedProducts, isLow))
+      .orderBy(asc(product.stock), asc(product.name), asc(product.id))
+      .limit(STOCK_NAMES_LIMIT),
+    db
+      .select({ name: product.name })
+      .from(product)
+      .where(and(trackedProducts, isOut))
+      .orderBy(asc(product.name), asc(product.id))
+      .limit(STOCK_NAMES_LIMIT),
+
+    // Por validar: de la bodega (no del período); solo si el rol puede aprobar
+    canApprove
+      ? db
+          .select({ n: num(sql`count(*)`) })
+          .from(sale)
+          .where(and(eq(sale.organizationId, orgId), eq(sale.status, 'pendiente')))
+      : Promise.resolve(null),
+
+    // Precios editados: solo para quien ve las ventas de todos (el cajero no ve esta tarjeta)
+    ownSalesOnly
+      ? Promise.resolve(null)
+      : db
+          .select({
+            n: num(sql`count(distinct ${sale.id})`),
+            diff: num(
+              sql`coalesce(sum(${saleItem.listUnitPriceCents} * ${saleItem.quantity} - ${saleItem.lineTotalCents}), 0)`,
+            ),
+          })
+          .from(saleItem)
+          .innerJoin(sale, eq(sale.id, saleItem.saleId))
+          .where(
+            and(
+              scope,
+              inCur,
+              sql`${sale.status} in ('completada', 'pendiente')`,
+              eq(saleItem.priceSource, 'manual'),
+            ),
+          ),
+  ])
 
   const s = summaryRows[0]
   const totals = {
@@ -220,6 +252,9 @@ export async function getDashboard(
     topProducts: topRows,
     voidedCount: s.voidedCount,
     pendingCount: pendingRows ? pendingRows[0].n : null,
+    editedPrices: editedRows
+      ? { count: editedRows[0].n, differenceCents: editedRows[0].diff }
+      : null,
     stock: {
       low: { count: stockCounts[0].low, names: lowNames.map((r) => r.name) },
       out: { count: stockCounts[0].out, names: outNames.map((r) => r.name) },

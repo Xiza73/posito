@@ -18,6 +18,10 @@ export type ExportRow = {
   totalCents: number
   items: { name: string; qty: number }[]
   voidReason: string | null
+  /** Alguna línea se cobró con precio editado a mano. */
+  priceEdited: boolean
+  /** Σ (precio normal × cantidad − cobrado) de las líneas manuales; positivo = descuento. */
+  priceDifferenceCents: number
 }
 
 export const CSV_HEADERS = [
@@ -31,6 +35,8 @@ export const CSV_HEADERS = [
   'Total',
   'Productos',
   'Motivo anulación',
+  'Precio editado',
+  'Diferencia',
 ] as const
 
 const STATUS_LABELS = {
@@ -52,6 +58,9 @@ function rowCells(r: ExportRow): string[] {
     // ' | ' y no ';': un Excel con separador ';' partiría la celda y dejaría una fórmula suelta
     r.items.map((i) => `${i.qty}x ${i.name}`).join(' | '),
     r.voidReason ?? '',
+    r.priceEdited ? 'Sí' : 'No',
+    // Vacío si no hubo edición; el signo "-" (cobró de más) pasa por la guarda anti-fórmulas
+    r.priceEdited ? centsToDecimal(r.priceDifferenceCents) : '',
   ]
 }
 
