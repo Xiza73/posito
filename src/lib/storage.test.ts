@@ -1,5 +1,12 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createStorage, StorageConfigError, StorageError, storageFromEnv } from './storage'
+import {
+  createStorage,
+  StorageConfigError,
+  StorageError,
+  storageApiBase,
+  storageAuthHeaders,
+  storageFromEnv,
+} from './storage'
 
 const KEY = 'service-role-secret-key'
 const URL_ = 'https://abc.supabase.co'
@@ -199,5 +206,47 @@ describe('getBucket', () => {
       allowedMimeTypes: null,
     })
     expect(await storage.getBucket('b')).toBeNull()
+  })
+})
+
+describe('storageApiBase', () => {
+  it('usa solo el origen: tolera la URL de la Data API y barras finales', () => {
+    const want = 'https://abc.supabase.co/storage/v1'
+    expect(storageApiBase('https://abc.supabase.co')).toBe(want)
+    expect(storageApiBase('https://abc.supabase.co/')).toBe(want)
+    expect(storageApiBase('https://abc.supabase.co/rest/v1/')).toBe(want)
+  })
+
+  it('rechaza protocolos que no son http(s) y URLs inválidas', () => {
+    expect(() => storageApiBase('javascript:alert(1)')).toThrow(StorageConfigError)
+    expect(() => storageApiBase('no-es-url')).toThrow()
+  })
+})
+
+describe('storageAuthHeaders', () => {
+  it('clave secreta nueva (sb_secret_…): solo apikey, nunca Bearer', () => {
+    expect(storageAuthHeaders('sb_secret_abc')).toEqual({ apikey: 'sb_secret_abc' })
+  })
+
+  it('clave legacy service_role (JWT): apikey y Bearer', () => {
+    expect(storageAuthHeaders('eyJhbGciOi.x.y')).toEqual({
+      apikey: 'eyJhbGciOi.x.y',
+      authorization: 'Bearer eyJhbGciOi.x.y',
+    })
+  })
+
+  it('createStorage con clave nueva no manda Authorization', async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ id: 'b' }), { status: 200 }))
+    const s = createStorage({
+      url: 'https://abc.supabase.co/rest/v1/',
+      serviceKey: 'sb_secret_abc',
+      fetch: fetchMock as unknown as typeof fetch,
+    })
+    await s.getBucket('product-images').catch(() => null)
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    expect(url).toBe('https://abc.supabase.co/storage/v1/bucket/product-images')
+    const headers = init.headers as Record<string, string>
+    expect(headers.apikey).toBe('sb_secret_abc')
+    expect(headers.authorization).toBeUndefined()
   })
 })

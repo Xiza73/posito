@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { ProductThumb } from '@/components/product-thumb'
 import { IMAGE_INPUT_TYPES, resizeToWebp, validateImageFile } from '@/lib/image-resize'
 import { IMAGE_LARGE_SIZE, IMAGE_THUMB_SIZE } from '@/lib/product-image'
+import { TimeoutError, uploadToSignedUrl, withTimeout } from '@/lib/with-timeout'
 import {
   confirmProductImage,
   type GalleryResult,
@@ -14,10 +15,12 @@ import {
   requestProductImageUpload,
 } from '../actions'
 import type { GalleryPhoto } from '../data/gallery'
+import { galleryUploadSummary, planGalleryUpload } from '../lib/gallery-upload'
 import { ProductImageField } from './product-image-field'
 
 const MAX = 8
-const UPLOAD_HEADERS = { 'content-type': 'image/webp', 'cache-control': 'max-age=31536000' }
+const STEP_MS = 30_000
+const TOO_SLOW = 'La subida tardó demasiado. Revisa tu conexión e inténtalo de nuevo.'
 const BTN =
   'h-9 cursor-pointer rounded-ctl border border-line px-3 font-medium text-xs hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-50'
 
@@ -26,19 +29,29 @@ type Props = {
   productName: string
   imageBase: string
   initialPath: string | null
-}
-
-async function put(url: string, blob: Blob) {
-  const res = await fetch(url, { method: 'PUT', headers: UPLOAD_HEADERS, body: blob })
-  if (!res.ok) throw new Error('upload')
+  /** true mientras cualquier foto (principal o extra) se sube o cambia: el formulario se bloquea. */
+  onBusyChange?: (busy: boolean) => void
 }
 
 /** Foto principal + galería de fotos extra (hasta 8, solo se ven en la tienda). */
-export function ProductPhotos({ productId, productName, imageBase, initialPath }: Props) {
+export function ProductPhotos({
+  productId,
+  productName,
+  imageBase,
+  initialPath,
+  onBusyChange,
+}: Props) {
   const [mainPath, setMainPath] = useState(initialPath)
   const [photos, setPhotos] = useState<GalleryPhoto[] | null>(null)
   const [busy, setBusy] = useState<string | null>(null) // 'add' | `${acción}:${photoId}`
   const [error, setError] = useState<string | null>(null)
+  const [mainBusy, setMainBusy] = useState(false)
+  const [progress, setProgress] = useState<{ current: number; total: number } | null>(null)
+  const anyBusy = busy !== null || mainBusy
+
+  useEffect(() => {
+    onBusyChange?.(anyBusy)
+  }, [anyBusy, onBusyChange])
   const inputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -59,49 +72,80 @@ export function ProductPhotos({ productId, productName, imageBase, initialPath }
     setBusy(key)
     setError(null)
     try {
-      const res = await action()
+      const res = await withTimeout(action(), STEP_MS)
       if (!res.ok) return setError(res.error)
       setPhotos(res.photos)
       if (res.imagePath) setMainPath(res.imagePath)
+    } catch (e) {
+      setError(
+        e instanceof TimeoutError
+          ? TOO_SLOW
+          : 'No se pudo completar la acción. Inténtalo de nuevo.',
+      )
     } finally {
       setBusy(null)
     }
   }
 
-  async function onPick(file: File | undefined) {
-    if (!file) return
+  /** Sube UNA foto extra. Devuelve null si salió bien o el mensaje de error. */
+  async function uploadOne(file: File): Promise<string | null> {
     const invalid = validateImageFile(file)
-    if (invalid) return setError(invalid)
+    if (invalid) return invalid
+    let large: Blob
+    let thumb: Blob
+    try {
+      ;[large, thumb] = await withTimeout(
+        Promise.all([resizeToWebp(file, IMAGE_LARGE_SIZE), resizeToWebp(file, IMAGE_THUMB_SIZE)]),
+        STEP_MS,
+      )
+    } catch {
+      return 'no se pudo leer la imagen'
+    }
+    try {
+      const signed = await withTimeout(
+        requestProductImageUpload({ productId, kind: 'gallery' }),
+        STEP_MS,
+      )
+      if (!signed.ok) return signed.error
+      await Promise.all([
+        uploadToSignedUrl(signed.largeUrl, large),
+        uploadToSignedUrl(signed.thumbUrl, thumb),
+      ])
+      const done = await withTimeout(
+        confirmProductImage({ productId, basePath: signed.basePath, kind: 'gallery' }),
+        STEP_MS,
+      )
+      return done.ok ? null : done.error
+    } catch (e) {
+      return e instanceof TimeoutError ? 'tardó demasiado' : 'falló la subida'
+    }
+  }
+
+  /**
+   * Varias fotos a la vez: EN FILA (no en paralelo), para no saturar una conexión lenta y que cada
+   * una tome su posición en orden. Las que no caben (máx. 8) quedan fuera; un error no frena al resto.
+   */
+  async function onPick(list: FileList | null) {
+    const files = list ? Array.from(list) : []
+    if (files.length === 0) return
+    const { toUpload, skipped } = planGalleryUpload(files, count, MAX)
 
     setBusy('add')
     setError(null)
+    const failed: { name: string; error: string }[] = []
     try {
-      let large: Blob
-      let thumb: Blob
-      try {
-        ;[large, thumb] = await Promise.all([
-          resizeToWebp(file, IMAGE_LARGE_SIZE),
-          resizeToWebp(file, IMAGE_THUMB_SIZE),
-        ])
-      } catch {
-        return setError('No se pudo leer la imagen. Prueba con otra foto.')
+      for (const [i, file] of toUpload.entries()) {
+        setProgress({ current: i + 1, total: toUpload.length })
+        const err = await uploadOne(file)
+        if (err) failed.push({ name: file.name, error: err })
       }
-      const signed = await requestProductImageUpload({ productId, kind: 'gallery' })
-      if (!signed.ok) return setError(signed.error)
-      try {
-        await Promise.all([put(signed.largeUrl, large), put(signed.thumbUrl, thumb)])
-      } catch {
-        return setError('No se pudo subir la foto. Revisa tu conexión e inténtalo de nuevo.')
-      }
-      const done = await confirmProductImage({
-        productId,
-        basePath: signed.basePath,
-        kind: 'gallery',
-      })
-      if (!done.ok) return setError(done.error)
-      const list = await listGalleryAction({ productId })
-      if (list.ok) setPhotos(list.photos)
+      const refreshed = await withTimeout(listGalleryAction({ productId }), STEP_MS)
+      if (refreshed.ok) setPhotos(refreshed.photos)
+    } catch {
+      // Solo falló el refresco de la lista: las fotos ya subidas se verán al reabrir
     } finally {
+      setError(galleryUploadSummary(failed, skipped))
+      setProgress(null)
       setBusy(null)
       if (inputRef.current) inputRef.current.value = ''
     }
@@ -115,6 +159,7 @@ export function ProductPhotos({ productId, productName, imageBase, initialPath }
         imageBase={imageBase}
         path={mainPath}
         onPathChange={setMainPath}
+        onBusyChange={setMainBusy}
       />
 
       <section aria-labelledby="pf-gallery-title" className="flex flex-col gap-2.5">
@@ -129,7 +174,8 @@ export function ProductPhotos({ productId, productName, imageBase, initialPath }
             accept={IMAGE_INPUT_TYPES.join(',')}
             className="sr-only"
             tabIndex={-1}
-            onChange={(e) => onPick(e.currentTarget.files?.[0])}
+            multiple
+            onChange={(e) => onPick(e.currentTarget.files)}
           />
           <button
             type="button"
@@ -137,7 +183,11 @@ export function ProductPhotos({ productId, productName, imageBase, initialPath }
             onClick={() => inputRef.current?.click()}
             className={BTN}
           >
-            {busy === 'add' ? 'Subiendo…' : 'Agregar foto'}
+            {busy === 'add'
+              ? progress && progress.total > 1
+                ? `Subiendo ${progress.current} de ${progress.total}…`
+                : 'Subiendo…'
+              : 'Agregar fotos'}
           </button>
         </div>
         <p className="text-muted text-xs">Se muestran solo en la ficha de la tienda.</p>

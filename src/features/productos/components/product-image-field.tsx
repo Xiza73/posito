@@ -4,6 +4,7 @@ import { useRef, useState } from 'react'
 import { ProductThumb } from '@/components/product-thumb'
 import { IMAGE_INPUT_TYPES, resizeToWebp, validateImageFile } from '@/lib/image-resize'
 import { IMAGE_LARGE_SIZE, IMAGE_THUMB_SIZE } from '@/lib/product-image'
+import { TimeoutError, uploadToSignedUrl, withTimeout } from '@/lib/with-timeout'
 import { confirmProductImage, removeProductImage, requestProductImageUpload } from '../actions'
 
 type Props = {
@@ -12,14 +13,12 @@ type Props = {
   imageBase: string
   path: string | null
   onPathChange: (path: string | null) => void
+  /** Avisa al formulario para bloquearlo entero mientras se sube o quita. */
+  onBusyChange?: (busy: boolean) => void
 }
 
-const UPLOAD_HEADERS = { 'content-type': 'image/webp', 'cache-control': 'max-age=31536000' }
-
-async function put(url: string, blob: Blob) {
-  const res = await fetch(url, { method: 'PUT', headers: UPLOAD_HEADERS, body: blob })
-  if (!res.ok) throw new Error('upload')
-}
+const STEP_MS = 30_000
+const TOO_SLOW = 'La subida tardó demasiado. Revisa tu conexión e inténtalo de nuevo.'
 
 /** Foto del producto: sube/cambia/quita directo contra Storage; no forma parte del form de datos. */
 export function ProductImageField({
@@ -28,10 +27,16 @@ export function ProductImageField({
   imageBase,
   path,
   onPathChange: setPath,
+  onBusyChange,
 }: Props) {
   const inputRef = useRef<HTMLInputElement>(null)
-  const [busy, setBusy] = useState(false)
+  const [busy, setBusyState] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  function setBusy(value: boolean) {
+    setBusyState(value)
+    onBusyChange?.(value)
+  }
 
   async function onPick(file: File | undefined) {
     if (!file) return
@@ -44,23 +49,38 @@ export function ProductImageField({
       let large: Blob
       let thumb: Blob
       try {
-        ;[large, thumb] = await Promise.all([
-          resizeToWebp(file, IMAGE_LARGE_SIZE),
-          resizeToWebp(file, IMAGE_THUMB_SIZE),
-        ])
+        ;[large, thumb] = await withTimeout(
+          Promise.all([resizeToWebp(file, IMAGE_LARGE_SIZE), resizeToWebp(file, IMAGE_THUMB_SIZE)]),
+          STEP_MS,
+        )
       } catch {
         return setError('No se pudo leer la imagen. Prueba con otra foto.')
       }
-      const signed = await requestProductImageUpload({ productId })
+      const signed = await withTimeout(requestProductImageUpload({ productId }), STEP_MS)
       if (!signed.ok) return setError(signed.error)
       try {
-        await Promise.all([put(signed.largeUrl, large), put(signed.thumbUrl, thumb)])
-      } catch {
-        return setError('No se pudo subir la foto. Revisa tu conexión e inténtalo de nuevo.')
+        await Promise.all([
+          uploadToSignedUrl(signed.largeUrl, large),
+          uploadToSignedUrl(signed.thumbUrl, thumb),
+        ])
+      } catch (e) {
+        return setError(
+          e instanceof TimeoutError
+            ? TOO_SLOW
+            : 'No se pudo subir la foto. Revisa tu conexión e inténtalo de nuevo.',
+        )
       }
-      const done = await confirmProductImage({ productId, basePath: signed.basePath })
+      const done = await withTimeout(
+        confirmProductImage({ productId, basePath: signed.basePath }),
+        STEP_MS,
+      )
       if (!done.ok) return setError(done.error)
       setPath(done.imagePath)
+    } catch (e) {
+      // Nunca dejar la UI colgada: timeout o error inesperado (p. ej. de red en la Server Action)
+      setError(
+        e instanceof TimeoutError ? TOO_SLOW : 'No se pudo subir la foto. Inténtalo de nuevo.',
+      )
     } finally {
       setBusy(false)
       if (inputRef.current) inputRef.current.value = ''
@@ -71,9 +91,13 @@ export function ProductImageField({
     setBusy(true)
     setError(null)
     try {
-      const done = await removeProductImage({ productId })
+      const done = await withTimeout(removeProductImage({ productId }), STEP_MS)
       if (!done.ok) return setError(done.error)
       setPath(done.imagePath)
+    } catch (e) {
+      setError(
+        e instanceof TimeoutError ? TOO_SLOW : 'No se pudo quitar la foto. Inténtalo de nuevo.',
+      )
     } finally {
       setBusy(false)
     }
