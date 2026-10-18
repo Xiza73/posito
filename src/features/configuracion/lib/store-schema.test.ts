@@ -1,13 +1,25 @@
 import { describe, expect, it } from 'vitest'
 import { storeSettingsSchema } from './schemas'
 
-const base = { storeEnabled: true, hasWhatsapp: true, storeSlug: 'Mi-Bodega ', storeHours: '' }
+const base = {
+  storeEnabled: true,
+  hasWhatsapp: true,
+  metroDeliveryEnabled: false,
+  storeSlug: 'Mi-Bodega ',
+  storeHours: '',
+}
 
 describe('storeSettingsSchema', () => {
   it('normaliza el slug y deja el horario vacío como null', () => {
     const r = storeSettingsSchema.parse(base)
     expect(r.storeSlug).toBe('mi-bodega')
     expect(r.storeHours).toBeNull()
+  })
+
+  it('el flag del Metropolitano pasa tal cual', () => {
+    expect(
+      storeSettingsSchema.parse({ ...base, metroDeliveryEnabled: true }).metroDeliveryEnabled,
+    ).toBe(true)
   })
 
   it('exige slug para activar y lo permite vacío si está apagada', () => {

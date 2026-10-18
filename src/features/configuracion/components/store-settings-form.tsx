@@ -113,6 +113,17 @@ export function StoreSettingsForm({
           </Field>
         </div>
 
+        <div className="flex flex-col gap-1 sm:col-span-2">
+          <Toggle
+            name="metroDeliveryEnabled"
+            label="Entrega en estación del Metropolitano"
+            checked={v?.metroDeliveryEnabled ?? settings.metroDeliveryEnabled}
+          />
+          <p className="pl-14 text-muted text-xs">
+            Gratis; el cliente indica la estación y coordinan día y hora por WhatsApp
+          </p>
+        </div>
+
         <div className="sm:col-span-2">
           <Field
             id="st-hours"

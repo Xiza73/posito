@@ -284,6 +284,8 @@ export const organizationSettings = pgTable(
     storeSlug: text(),
     // Horario de atención, texto libre (máx. 200)
     storeHours: text(),
+    // Entrega en estación del Metropolitano (gratis; día y hora se coordinan por WhatsApp)
+    metroDeliveryEnabled: boolean().default(false).notNull(),
     updatedAt: updatedAt(),
   },
   (t) => [

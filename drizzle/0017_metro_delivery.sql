@@ -1,0 +1,1 @@
+ALTER TABLE "organization_settings" ADD COLUMN "metro_delivery_enabled" boolean DEFAULT false NOT NULL;

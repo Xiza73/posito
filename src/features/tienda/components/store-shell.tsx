@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import { usePathname, useRouter } from 'next/navigation'
 import { createContext, useContext, useEffect, useRef, useState } from 'react'
 import {
   addToCart,
@@ -14,6 +15,7 @@ import {
 import type { PublicCatalog, PublicProduct } from '../lib/public-catalog'
 import { orderTotalCents } from '../lib/whatsapp'
 import { CartDialog } from './cart-dialog'
+import { BagIcon, SearchIcon, WhatsappIcon } from './icons'
 
 /** Lo único del perfil que viaja al navegador (sin ids internos). */
 export type PublicStore = {
@@ -22,6 +24,8 @@ export type PublicStore = {
   hours: string | null
   /** 51XXXXXXXXX, para wa.me. */
   whatsapp: string
+  /** Ofrece entrega en estación del Metropolitano. */
+  metroDelivery: boolean
 }
 
 type StoreContextValue = {
@@ -37,6 +41,9 @@ type StoreContextValue = {
   remove: (productId: string) => void
   clear: () => void
   openCart: () => void
+  /** Búsqueda del catálogo (vive aquí porque el campo está en el encabezado). */
+  query: string
+  setQuery: (q: string) => void
 }
 
 const StoreContext = createContext<StoreContextValue | null>(null)
@@ -81,6 +88,7 @@ export function StoreShell({
   const byId = new Map(catalog.products.map((p) => [p.id, p]))
   const [cart, setCart] = useState<CartEntry[]>([])
   const [hydrated, setHydrated] = useState(false)
+  const [query, setQuery] = useState('')
   const dialogRef = useRef<HTMLDialogElement>(null)
   const key = cartStorageKey(slug)
 
@@ -117,39 +125,118 @@ export function StoreShell({
     remove: (id) => setCart((c) => removeFromCart(c, id)),
     clear: () => setCart([]),
     openCart: () => dialogRef.current?.showModal(),
+    query,
+    setQuery,
   }
 
   return (
     <StoreContext.Provider value={value}>
-      <header className="sticky top-0 z-20 border-line border-b bg-surface">
-        <div className="mx-auto flex max-w-5xl items-center justify-between gap-3 px-4 py-3">
-          <div className="min-w-0">
-            <Link href={`/tienda/${slug}`} className="block truncate font-semibold text-lg">
-              {store.tradeName}
-            </Link>
-            {store.address || store.hours ? (
-              <p className="truncate text-muted text-xs">
-                {[store.address, store.hours].filter(Boolean).join(' · ')}
-              </p>
-            ) : null}
-          </div>
-          <button
-            type="button"
-            onClick={value.openCart}
-            aria-label={`Ver mi pedido, ${value.cartCount} unidades`}
-            className="relative h-11 flex-none cursor-pointer rounded-ctl bg-accent px-4 font-semibold text-accent-ink text-sm"
-          >
-            Mi pedido
-            {value.cartCount > 0 ? (
-              <span className="ml-2 rounded-full bg-accent-ink px-2 py-0.5 text-accent text-xs">
-                {value.cartCount}
-              </span>
-            ) : null}
-          </button>
-        </div>
-      </header>
-      <main className="mx-auto max-w-5xl px-4 py-5">{children}</main>
+      <StoreHeader />
+      <main className="mx-auto max-w-6xl px-4 py-5 md:py-7">{children}</main>
+      <StoreFooter />
       <CartDialog ref={dialogRef} />
     </StoreContext.Provider>
+  )
+}
+
+function StoreHeader() {
+  const { slug, store, cartCount, openCart, query, setQuery } = useStore()
+  const pathname = usePathname()
+  const router = useRouter()
+  const home = `/tienda/${slug}`
+
+  function search(value: string) {
+    setQuery(value)
+    // Desde una ficha, buscar lleva al catálogo
+    if (pathname !== home) router.push(home)
+  }
+
+  return (
+    <header className="sticky top-0 z-20 border-line border-b bg-surface/95 backdrop-blur">
+      <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-4 gap-y-3 px-4 py-3">
+        <Link href={home} className="order-1 flex min-w-0 flex-1 items-center gap-3 md:flex-none">
+          <span
+            aria-hidden="true"
+            className="grid size-10 flex-none place-items-center rounded-xl bg-accent font-bold text-accent-ink text-lg"
+          >
+            {store.tradeName.trim().charAt(0).toUpperCase() || 'T'}
+          </span>
+          <span className="min-w-0">
+            <span className="block truncate font-semibold text-base leading-tight">
+              {store.tradeName}
+            </span>
+            {store.hours ? (
+              <span className="flex items-center gap-1.5 text-muted text-xs">
+                <span aria-hidden="true" className="size-1.5 flex-none rounded-full bg-muted" />
+                <span className="truncate">Horario: {store.hours}</span>
+              </span>
+            ) : null}
+          </span>
+        </Link>
+
+        <form
+          onSubmit={(e) => e.preventDefault()}
+          className="field-box order-3 flex h-11 w-full items-center gap-2 rounded-full border border-line bg-page px-4 md:order-2 md:w-auto md:flex-1"
+        >
+          <SearchIcon className="size-4.5 flex-none text-muted" />
+          <label htmlFor="st-search" className="sr-only">
+            Buscar productos
+          </label>
+          <input
+            id="st-search"
+            type="search"
+            placeholder="Buscar productos"
+            value={query}
+            onChange={(e) => search(e.target.value)}
+            autoComplete="off"
+            className="h-full min-w-0 flex-1 bg-transparent text-sm"
+          />
+        </form>
+
+        <button
+          type="button"
+          onClick={openCart}
+          aria-label="Ver mi pedido"
+          className="relative order-2 grid size-11 flex-none cursor-pointer place-items-center rounded-full bg-accent text-accent-ink md:order-3"
+        >
+          <BagIcon />
+          {cartCount > 0 ? (
+            <span
+              aria-hidden="true"
+              className="absolute -top-1 -right-1 grid min-w-5 place-items-center rounded-full border-2 border-surface bg-ink px-1 font-semibold text-[0.65rem] text-surface leading-4"
+            >
+              {cartCount}
+            </span>
+          ) : null}
+        </button>
+        <span className="sr-only" aria-live="polite">
+          {cartCount === 1 ? '1 unidad en tu pedido' : `${cartCount} unidades en tu pedido`}
+        </span>
+      </div>
+    </header>
+  )
+}
+
+function StoreFooter() {
+  const { store } = useStore()
+  return (
+    <footer className="mt-10 border-line border-t bg-surface">
+      <div className="mx-auto flex max-w-6xl flex-col gap-4 px-4 py-6 text-sm md:flex-row md:items-start md:justify-between">
+        <div className="flex flex-col gap-1">
+          <p className="font-semibold">{store.tradeName}</p>
+          {store.address ? <p className="text-muted">{store.address}</p> : null}
+          {store.hours ? <p className="text-muted">{store.hours}</p> : null}
+        </div>
+        <a
+          href={`https://wa.me/${store.whatsapp}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex h-11 items-center gap-2 self-start rounded-full border border-line px-4 font-medium"
+        >
+          <WhatsappIcon className="size-5 text-ok" />
+          Escríbenos por WhatsApp
+        </a>
+      </div>
+    </footer>
   )
 }

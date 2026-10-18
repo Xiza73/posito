@@ -181,7 +181,13 @@ export type StoreSettingsState = {
   error?: string
   fieldErrors?: Record<string, string[] | undefined>
   /** Valores crudos para repoblar el formulario tras un error. */
-  values?: { storeEnabled: boolean; hasWhatsapp: boolean; storeSlug: string; storeHours: string }
+  values?: {
+    storeEnabled: boolean
+    hasWhatsapp: boolean
+    metroDeliveryEnabled: boolean
+    storeSlug: string
+    storeHours: string
+  }
 }
 
 /** Guarda la tienda online (pública, sin login). Exige `organization:update`. */
@@ -192,6 +198,7 @@ export async function updateStoreSettingsAction(
   const values = {
     storeEnabled: formData.get('storeEnabled') !== null,
     hasWhatsapp: formData.get('hasWhatsapp') !== null,
+    metroDeliveryEnabled: formData.get('metroDeliveryEnabled') !== null,
     storeSlug: text(formData, 'storeSlug'),
     storeHours: text(formData, 'storeHours'),
   }

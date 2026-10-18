@@ -18,7 +18,7 @@ export function StoreImage({
   eager?: boolean
 }) {
   if (!src) {
-    return <div aria-hidden="true" className={`border border-line ${PLACEHOLDER} ${className}`} />
+    return <div aria-hidden="true" className={`bg-surface-2 ${PLACEHOLDER} ${className}`} />
   }
   return (
     // biome-ignore lint/performance/noImgElement: imágenes ya reducidas; evita la cuota de next/image
@@ -29,7 +29,7 @@ export function StoreImage({
       height={height}
       loading={eager ? 'eager' : 'lazy'}
       decoding="async"
-      className={`border border-line bg-surface-2 object-cover ${className}`}
+      className={`bg-surface-2 object-cover ${className}`}
     />
   )
 }

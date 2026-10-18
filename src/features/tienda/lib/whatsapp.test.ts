@@ -74,6 +74,43 @@ describe('buildOrderMessage', () => {
     expect(text).toContain('Dirección: Av. Lima 123')
   })
 
+  it('delivery incluye referencia, envío a confirmar y total + envío', () => {
+    const { text } = buildOrderMessage({
+      storeName: 'X',
+      lines: [inca],
+      customer: {
+        name: 'Ana',
+        mode: 'delivery',
+        address: 'Av. Lima 123',
+        reference: 'Frente al grifo',
+      },
+    })
+    expect(text).toContain('Referencia: Frente al grifo')
+    expect(text).toContain('Envío: a confirmar')
+    expect(text).toContain(`Total: ${formatCents(600)} + envío`)
+  })
+
+  it('recojo: envío gratis y total sin "+ envío"', () => {
+    const { text } = buildOrderMessage({ storeName: 'X', lines: [inca], customer })
+    expect(text).toContain('Envío: gratis')
+    expect(text).not.toContain('+ envío')
+    expect(text).not.toMatch(/Estación|Coordinar/)
+  })
+
+  it('metro: estación, coordinar día y hora, envío gratis', () => {
+    const { text } = buildOrderMessage({
+      storeName: 'X',
+      lines: [inca],
+      customer: { name: 'Ana', mode: 'metro', station: 'Estación *Naranjal*', address: 'ignorada' },
+    })
+    expect(text).toContain('Modalidad: Estación del Metropolitano')
+    expect(text).toContain('Estación: Estación Naranjal')
+    expect(text).toContain('Coordinar día y hora')
+    expect(text).toContain('Envío: gratis')
+    expect(text).toContain(`Total: ${formatCents(600)}`)
+    expect(text).not.toMatch(/Dirección|\+ envío/)
+  })
+
   it('sanitiza: controles, formato de WhatsApp y topes de largo', () => {
     const { text } = buildOrderMessage({
       storeName: 'X',
@@ -82,6 +119,7 @@ describe('buildOrderMessage', () => {
         name: `*Ana*‮\n_Rojas_${'x'.repeat(200)}`,
         mode: 'delivery',
         address: 'd'.repeat(500),
+        reference: 'r'.repeat(500),
         note: 'n'.repeat(900),
       },
     })
@@ -89,6 +127,7 @@ describe('buildOrderMessage', () => {
     expect(line('Cliente: ').length).toBe('Cliente: '.length + 80)
     expect(line('Cliente: ')).not.toMatch(/[*_‮]/)
     expect(line('Dirección: ').length).toBe('Dirección: '.length + 200)
+    expect(line('Referencia: ').length).toBe('Referencia: '.length + 150)
     expect(line('Nota: ').length).toBe('Nota: '.length + 300)
   })
 
@@ -118,6 +157,38 @@ describe('buildOrderMessage', () => {
   it('el total ignora más de 50 líneas, igual que el mensaje', () => {
     const many = Array.from({ length: 60 }, () => ({ ...inca, qty: 1 }))
     expect(orderTotalCents(many)).toBe(50 * 300)
+  })
+})
+
+describe('emoji y tamaño codificado', () => {
+  it('truncar en el límite no parte un par sustituto', () => {
+    const emoji = '😀'.repeat(100)
+    expect(Array.from(sanitizeText(emoji, 80))).toHaveLength(80)
+    const { text } = buildOrderMessage({
+      storeName: emoji,
+      lines: [inca],
+      customer: { name: emoji, mode: 'delivery', address: emoji, reference: emoji, note: emoji },
+    })
+    expect(() => whatsappUrl('51987654321', text)).not.toThrow()
+    expect(() => encodeURIComponent(text)).not.toThrow()
+  })
+
+  it('campos largos con tildes/emoji: conserva ≥1 producto y el total, y cabe', () => {
+    const lines = Array.from({ length: 30 }, (_, i) => ({ ...inca, name: `Producto ${i}`, qty: 1 }))
+    const { text, totalCents } = buildOrderMessage({
+      storeName: 'Don Pepe',
+      lines,
+      customer: {
+        name: 'Ana',
+        mode: 'delivery',
+        address: 'ñ'.repeat(200),
+        reference: '😀'.repeat(150),
+        note: 'é😀'.repeat(150),
+      },
+    })
+    expect(text).toContain('• 1 x Producto 0')
+    expect(text).toContain(`Total: ${formatCents(totalCents)} + envío`)
+    expect(encodeURIComponent(text).length).toBeLessThanOrEqual(1800)
   })
 })
 

@@ -120,6 +120,13 @@
       "when": 1792277272967,
       "tag": "0016_tienda_online",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1792363261431,
+      "tag": "0017_metro_delivery",
+      "breakpoints": true
     }
   ]
 }

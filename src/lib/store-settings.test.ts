@@ -22,6 +22,7 @@ const input: StoreSettings = {
   hasWhatsapp: true,
   storeSlug: 'mi-tienda',
   storeHours: '8 a 20',
+  metroDeliveryEnabled: true,
 }
 
 beforeAll(async () => {
@@ -46,6 +47,25 @@ describe('store settings', () => {
     // y guardar otros ajustes no apaga la tienda
     await updateSettings(db, A, { allowManualPrice: true })
     expect(await getStoreSettings(db, A)).toEqual(input)
+  })
+
+  it('guardar el flag del Metropolitano no pisa otras columnas ni ajustes', async () => {
+    await db
+      .update(schema.organizationSettings)
+      .set({ tradeName: 'Don Pepe' })
+      .where(eq(schema.organizationSettings.organizationId, A))
+    await updateStoreSettings(db, A, { ...input, metroDeliveryEnabled: false })
+    expect((await getStoreSettings(db, A)).metroDeliveryEnabled).toBe(false)
+    await updateSettings(db, A, { allowManualPrice: false })
+    expect((await getStoreSettings(db, A)).metroDeliveryEnabled).toBe(false)
+    await updateStoreSettings(db, A, input)
+    const [row] = await db
+      .select()
+      .from(schema.organizationSettings)
+      .where(eq(schema.organizationSettings.organizationId, A))
+    expect(row.tradeName).toBe('Don Pepe')
+    expect(row.metroDeliveryEnabled).toBe(true)
+    expect((await getSettings(db, A)).requireSaleApproval).toBe(true)
   })
 
   it('slug repetido en otra bodega = slug_taken', async () => {
