@@ -12,6 +12,13 @@ export function middleware(request: NextRequest) {
 }
 
 export const config = {
-  // Puntos escapados: sin `\\.` el lookahead excluía toda ruta de más de un carácter
-  matcher: ['/((?!login|api/auth|_next|favicon\\.ico|.*\\.[a-zA-Z0-9]+$).*)'],
+  // Puntos escapados: sin `\\.` el lookahead excluía toda ruta de más de un carácter.
+  // `tienda` es PÚBLICA (catálogo sin login): se excluye EXACTAMENTE `/tienda` y `/tienda/...`
+  // (`(?:/|$)`), así `/tiendas` o `/tienda-admin` siguen protegidas. Debe ser un literal (Next lo
+  // analiza estáticamente); middleware.test.ts lo prueba como regex. `login` y `api/auth` también
+  // exigen `/` o fin: `/loginx` y `/api/authx` NO quedan excluidas.
+  // TODO ruta bajo `/tienda/` es PÚBLICA: jamás agregar páginas internas ahí.
+  matcher: [
+    '/((?!login(?:/|$)|api/auth(?:/|$)|tienda(?:/|$)|_next|favicon\\.ico|.*\\.[a-zA-Z0-9]+$).*)',
+  ],
 }

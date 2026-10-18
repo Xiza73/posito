@@ -215,3 +215,64 @@ describe('esquema: restricciones de integridad', () => {
     ).rejects.toThrow()
   })
 })
+
+describe('esquema: tienda online', () => {
+  const setSlug = (storeSlug: string | null) =>
+    db
+      .insert(schema.organizationSettings)
+      .values({ organizationId: ORG, storeSlug })
+      .onConflictDoUpdate({
+        target: schema.organizationSettings.organizationId,
+        set: { storeSlug },
+      })
+
+  it('product.show_in_store es true por defecto', async () => {
+    const [p] = await db
+      .select({ v: schema.product.showInStore })
+      .from(schema.product)
+      .where(eq(schema.product.id, productId))
+    expect(p.v).toBe(true)
+  })
+
+  it('acepta un slug válido y rechaza formatos inválidos', async () => {
+    await expect(setSlug('mi-bodega-1')).resolves.toBeDefined()
+    for (const bad of ['ab', '-abc', 'abc-', 'Mi-Bodega', 'a b c', 'añb', 'a'.repeat(41)]) {
+      await expect(setSlug(bad)).rejects.toThrow()
+    }
+  })
+
+  it('el slug es único entre bodegas', async () => {
+    await db
+      .insert(schema.organization)
+      .values({ id: 'org-slug-2', name: 'Otra', slug: 'otra-slug', createdAt: now })
+    await setSlug('slug-unico')
+    await expect(
+      db
+        .insert(schema.organizationSettings)
+        .values({ organizationId: 'org-slug-2', storeSlug: 'slug-unico' }),
+    ).rejects.toThrow()
+  })
+
+  it('rechaza un horario de más de 200 caracteres', async () => {
+    await expect(
+      db
+        .update(schema.organizationSettings)
+        .set({ storeHours: 'x'.repeat(201) })
+        .where(eq(schema.organizationSettings.organizationId, ORG)),
+    ).rejects.toThrow()
+  })
+})
+
+describe('esquema: historial de slugs de tienda', () => {
+  it('el slug es PK y debe cumplir el formato', async () => {
+    await expect(
+      db.insert(schema.storeSlugHistory).values({ slug: 'viejo-uno', organizationId: ORG }),
+    ).resolves.toBeDefined()
+    await expect(
+      db.insert(schema.storeSlugHistory).values({ slug: 'viejo-uno', organizationId: ORG }),
+    ).rejects.toThrow()
+    await expect(
+      db.insert(schema.storeSlugHistory).values({ slug: 'Mal Slug', organizationId: ORG }),
+    ).rejects.toThrow()
+  })
+})

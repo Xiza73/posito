@@ -20,6 +20,8 @@ export type ProductRow = {
   stock: number
   minStock: number
   active: boolean
+  /** Visible en la tienda online pública. */
+  showInStore: boolean
   /** Base de la foto en Storage (src/lib/product-image.ts); null = sin foto. */
   imagePath: string | null
   categoryId: string | null
@@ -56,6 +58,7 @@ export async function listProducts(
       stock: product.stock,
       minStock: product.minStock,
       active: product.active,
+      showInStore: product.showInStore,
       imagePath: product.imagePath,
       categoryId: product.categoryId,
       categoryName: category.name,
@@ -159,6 +162,7 @@ export async function createProduct(
         barcode: input.barcode,
         priceCents: input.priceCents,
         tracksStock: input.tracksStock,
+        showInStore: input.showInStore ?? true,
         stock,
         minStock: input.tracksStock ? input.minStock : 0,
       })
@@ -210,6 +214,7 @@ export async function updateProduct(
         barcode: input.barcode,
         priceCents: input.priceCents,
         tracksStock: input.tracksStock,
+        ...(input.showInStore === undefined ? {} : { showInStore: input.showInStore }),
         minStock: input.tracksStock ? input.minStock : 0,
       })
       .where(and(eq(product.id, id), eq(product.organizationId, orgId)))

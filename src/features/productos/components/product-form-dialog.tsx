@@ -195,6 +195,16 @@ function ProductForm({
           Controlar stock
         </label>
 
+        <label className="flex items-center gap-2.5 text-sm">
+          <input
+            type="checkbox"
+            name="showInStore"
+            defaultChecked={v?.showInStore ?? product?.showInStore ?? true}
+            className="size-4 accent-[var(--accent)]"
+          />
+          Mostrar en tienda
+        </label>
+
         {tracksStock ? (
           <div className="grid gap-3.5 sm:grid-cols-2">
             {editing ? (

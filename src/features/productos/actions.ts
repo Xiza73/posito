@@ -18,6 +18,7 @@ import {
   requirePermission,
 } from '@/lib/session'
 import { getStorage, StorageConfigError } from '@/lib/storage-server'
+import { revalidateStore } from '@/lib/store-cache'
 import {
   consumeUploadAndAddGalleryPhoto,
   GALLERY_MAX,
@@ -60,6 +61,7 @@ export type ProductFormValues = {
   price: string
   categoryName: string
   tracksStock: boolean
+  showInStore: boolean
   initialStock: string
   minStock: string
   tiers: TierRow[]
@@ -81,10 +83,12 @@ const text = (formData: FormData, key: string) => {
   return typeof v === 'string' ? v : ''
 }
 
-function revalidateCatalog() {
+async function revalidateCatalog() {
   revalidatePath('/productos')
   revalidatePath('/productos/categorias')
   revalidatePath('/caja')
+  // La tienda pública cachea por bodega (features/tienda/data/cached.ts)
+  await revalidateStore()
 }
 
 /** Autoriza con la sesión: la bodega y el usuario salen de aquí, nunca del formulario. */
@@ -150,6 +154,7 @@ function readProductForm(formData: FormData) {
     price: text(formData, 'price'),
     categoryName: text(formData, 'categoryName'),
     tracksStock: formData.get('tracksStock') === 'on',
+    showInStore: formData.get('showInStore') === 'on',
     initialStock: text(formData, 'initialStock'),
     minStock: text(formData, 'minStock'),
     tiers: tiers.rows,
@@ -160,6 +165,7 @@ function readProductForm(formData: FormData) {
     priceCents: values.price,
     categoryName: values.categoryName,
     tracksStock: values.tracksStock,
+    showInStore: values.showInStore,
     initialStock: values.initialStock,
     minStock: values.minStock,
     tiers: values.tiers,
@@ -188,7 +194,7 @@ export async function createProductAction(
     return toErrorState(e, { categoryField: 'categoryName', values })
   }
 
-  revalidateCatalog()
+  await revalidateCatalog()
   return { ok: true, message: `Producto ${parsed.data.name} creado` }
 }
 
@@ -214,7 +220,7 @@ export async function updateProductAction(
     return toErrorState(e, { categoryField: 'categoryName', values })
   }
 
-  revalidateCatalog()
+  await revalidateCatalog()
   return { ok: true, message: 'Producto actualizado' }
 }
 
@@ -232,7 +238,7 @@ export async function toggleActiveAction(_prev: FormState, formData: FormData): 
     return toErrorState(e, { categoryField: 'name' })
   }
 
-  revalidateCatalog()
+  await revalidateCatalog()
   return { ok: true, message: active ? 'Producto reactivado' : 'Producto desactivado' }
 }
 
@@ -252,7 +258,7 @@ export async function createCategoryAction(
     return toErrorState(e, { categoryField: 'name' })
   }
 
-  revalidateCatalog()
+  await revalidateCatalog()
   return { ok: true, message: 'Categoría creada' }
 }
 
@@ -279,7 +285,7 @@ export async function renameCategoryAction(
     return toErrorState(e, { categoryField: 'name' })
   }
 
-  revalidateCatalog()
+  await revalidateCatalog()
   return { ok: true, message: 'Categoría renombrada' }
 }
 
@@ -298,7 +304,7 @@ export async function deleteCategoryAction(
     return toErrorState(e, { categoryField: 'name' })
   }
 
-  revalidateCatalog()
+  await revalidateCatalog()
   return { ok: true, message: 'Categoría eliminada' }
 }
 
@@ -361,7 +367,7 @@ export async function commitImportAction(input: {
       rows,
       updateExisting,
     })
-    revalidateCatalog()
+    await revalidateCatalog()
     return { ok: true, summary }
   } catch (e) {
     if (isNextControlFlow(e)) throw e
@@ -521,7 +527,7 @@ export async function confirmProductImage(input: {
                 : IMAGE_ERROR,
         }
       }
-      revalidateCatalog()
+      await revalidateCatalog()
       return { ok: true, imagePath: basePath }
     }
 
@@ -537,7 +543,7 @@ export async function confirmProductImage(input: {
       return { ok: false, error: res.reason === 'not_found' ? NOT_FOUND : IMAGE_ERROR }
     }
     if (res.previous && res.previous !== basePath) await deleteImageObjects(storage, res.previous)
-    revalidateCatalog()
+    await revalidateCatalog()
     return { ok: true, imagePath: basePath }
   } catch (e) {
     return imageError(e)
@@ -554,7 +560,7 @@ export async function removeProductImage(input: { productId: string }): Promise<
     const res = await clearProductImage(db, { orgId: organization.id, id: productId.data })
     if (!res) return { ok: false, error: NOT_FOUND }
     if (res.previous) await deleteImageObjects(storage, res.previous)
-    revalidateCatalog()
+    await revalidateCatalog()
     return { ok: true, imagePath: null }
   } catch (e) {
     return imageError(e)
@@ -571,7 +577,7 @@ async function galleryOutcome(
   found: boolean,
 ): Promise<GalleryResult> {
   if (!found) return { ok: false, error: NOT_FOUND }
-  revalidateCatalog()
+  await revalidateCatalog()
   return { ok: true, photos: await listProductGallery(db, { orgId, productId }) }
 }
 

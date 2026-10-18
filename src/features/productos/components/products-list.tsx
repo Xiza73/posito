@@ -35,6 +35,14 @@ function WholesaleTag() {
   )
 }
 
+function HiddenInStoreTag() {
+  return (
+    <span className="ml-2 rounded-full border border-line px-2 py-0.5 font-normal text-muted text-xs">
+      Oculto en tienda
+    </span>
+  )
+}
+
 function InactiveTag() {
   return (
     <span className="ml-2 rounded-full border border-line px-2 py-0.5 font-normal text-muted text-xs">
@@ -113,6 +121,7 @@ export function ProductsList({ products, imageBase, ...actions }: Props) {
                       {p.name}
                       {p.tiers.length > 0 ? <WholesaleTag /> : null}
                       {p.active ? null : <InactiveTag />}
+                      {p.showInStore ? null : <HiddenInStoreTag />}
                     </div>
                     {p.barcode ? (
                       <div className="font-mono text-muted text-xs">{p.barcode}</div>
@@ -151,6 +160,7 @@ export function ProductsList({ products, imageBase, ...actions }: Props) {
                     {p.name}
                     {p.tiers.length > 0 ? <WholesaleTag /> : null}
                     {p.active ? null : <InactiveTag />}
+                    {p.showInStore ? null : <HiddenInStoreTag />}
                   </div>
                   <div className="text-muted text-xs">
                     {p.categoryName ?? 'Sin categoría'}

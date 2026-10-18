@@ -75,6 +75,8 @@ export const product = pgTable(
     stock: integer().default(0).notNull(),
     minStock: integer().default(0).notNull(),
     active: boolean().default(true).notNull(),
+    // false = no aparece en la tienda online pública (por defecto visible; ver CLAUDE.md §7)
+    showInStore: boolean().default(true).notNull(),
     // Base `${orgId}/${productId}/${uuid}` en Supabase Storage (src/lib/product-image.ts); null = sin foto
     imagePath: text(),
     createdAt: createdAt(),
@@ -256,25 +258,62 @@ export const sale = pgTable(
 
 // Ajustes de negocio por bodega (una fila por organization; sin fila = valores por defecto).
 // Aquí vivirán los futuros ajustes de la bodega.
-export const organizationSettings = pgTable('organization_settings', {
-  organizationId: text()
-    .primaryKey()
-    .references(() => organization.id, { onDelete: 'cascade' }),
-  // true = las ventas de los cajeros quedan 'pendiente' hasta que un admin las apruebe
-  requireSaleApproval: boolean().default(false).notNull(),
-  // true = cualquier rol puede editar el TOTAL de una línea en la Caja (precio 'manual')
-  allowManualPrice: boolean().default(false).notNull(),
-  // Datos del negocio (todos opcionales; los valores por defecto se resuelven en
-  // lib/settings.ts: tradeName vacío = nombre de la organization, receiptFooter vacío = agradecimiento)
-  tradeName: text(),
-  legalName: text(),
-  ruc: text(),
-  address: text(),
-  phone: text(),
-  branchName: text(),
-  receiptFooter: text(),
-  updatedAt: updatedAt(),
-})
+export const organizationSettings = pgTable(
+  'organization_settings',
+  {
+    organizationId: text()
+      .primaryKey()
+      .references(() => organization.id, { onDelete: 'cascade' }),
+    // true = las ventas de los cajeros quedan 'pendiente' hasta que un admin las apruebe
+    requireSaleApproval: boolean().default(false).notNull(),
+    // true = cualquier rol puede editar el TOTAL de una línea en la Caja (precio 'manual')
+    allowManualPrice: boolean().default(false).notNull(),
+    // Datos del negocio (todos opcionales; los valores por defecto se resuelven en
+    // lib/settings.ts: tradeName vacío = nombre de la organization, receiptFooter vacío = agradecimiento)
+    tradeName: text(),
+    legalName: text(),
+    ruc: text(),
+    address: text(),
+    phone: text(),
+    branchName: text(),
+    receiptFooter: text(),
+    // Tienda online pública (/tienda/<slug>). Solo se publica si storeEnabled + hasWhatsapp + teléfono válido.
+    storeEnabled: boolean().default(false).notNull(),
+    hasWhatsapp: boolean().default(false).notNull(),
+    // Dirección pública, en minúsculas; única global (índice parcial no hace falta: NULL no choca)
+    storeSlug: text(),
+    // Horario de atención, texto libre (máx. 200)
+    storeHours: text(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    uniqueIndex('organization_settings_store_slug_uq').on(t.storeSlug),
+    check(
+      'organization_settings_store_slug_format',
+      sql`${t.storeSlug} is null or ${t.storeSlug} ~ '^[a-z0-9](?:[a-z0-9-]{1,38}[a-z0-9])$'`,
+    ),
+    check(
+      'organization_settings_store_hours_len',
+      sql`${t.storeHours} is null or char_length(${t.storeHours}) <= 200`,
+    ),
+  ],
+)
+
+// Slugs de tienda que una bodega dejó de usar. Se reservan: otra bodega no puede tomarlos (evita
+// que un QR/enlace impreso termine en la tienda de un tercero); la dueña original puede
+// recuperarlos y la tienda pública redirige (308) del viejo al actual.
+export const storeSlugHistory = pgTable(
+  'store_slug_history',
+  {
+    slug: text().primaryKey(),
+    organizationId: orgId(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    index('store_slug_history_org_idx').on(t.organizationId),
+    check('store_slug_history_format', sql`${t.slug} ~ '^[a-z0-9](?:[a-z0-9-]{1,38}[a-z0-9])$'`),
+  ],
+)
 
 // Contador de boletas por bodega: una fila por organization. El cobro la incrementa con un
 // upsert atómico (el bloqueo de fila serializa los cobros concurrentes).
