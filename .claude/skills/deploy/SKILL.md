@@ -17,6 +17,10 @@ description: Pasos para desplegar Ventalia POS a producción en Vercel (región 
 - No hay previews por ahora: necesitarían su propia DB y orígenes de auth. Se agregan cuando haga falta.
 - El build lo corre CI y Vercel; **nunca** localmente.
 
+## Tienda online pública (`/tienda/*`)
+
+Es la única parte sin login. No tiene rate limit en código: configura en **Vercel Firewall** una regla de rate-limit para la ruta `/tienda/*` (por IP) antes de publicar el enlace de una tienda.
+
 ## Variables en Vercel (solo entorno *Production*)
 
 | Variable | Valor |

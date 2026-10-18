@@ -3,20 +3,25 @@ import { BusinessProfileForm } from '@/features/configuracion/components/busines
 import { ManualPriceForm } from '@/features/configuracion/components/manual-price-form'
 import { ReceiptSeriesForm } from '@/features/configuracion/components/receipt-series-form'
 import { SaleApprovalForm } from '@/features/configuracion/components/sale-approval-form'
+import { StoreSettingsForm } from '@/features/configuracion/components/store-settings-form'
 import { getReceiptSeries } from '@/features/configuracion/data/receipt-series'
 import { db } from '@/lib/db'
 import { can } from '@/lib/permissions'
 import { getCurrentMember } from '@/lib/session'
 import { getBusinessProfile, getSettings } from '@/lib/settings'
+import { countStoreProducts, getStoreSettings } from '@/lib/store-settings'
+import { normalizeWhatsappNumber } from '@/lib/whatsapp-phone'
 
 export default async function ConfiguracionPage() {
   const { member, organization } = await getCurrentMember()
   if (!can(member.role, { organization: ['update'] })) return <NoPermission title="Configuración" />
 
-  const [{ series, nextNumber }, settings, profile] = await Promise.all([
+  const [{ series, nextNumber }, settings, profile, store, publishedCount] = await Promise.all([
     getReceiptSeries(db, organization.id),
     getSettings(db, organization.id),
     getBusinessProfile(db, organization.id),
+    getStoreSettings(db, organization.id),
+    countStoreProducts(db, organization.id),
   ])
 
   return (
@@ -26,6 +31,12 @@ export default async function ConfiguracionPage() {
       <ReceiptSeriesForm series={series} nextNumber={nextNumber} />
       <SaleApprovalForm requireSaleApproval={settings.requireSaleApproval} />
       <ManualPriceForm allowManualPrice={settings.allowManualPrice} />
+      <StoreSettingsForm
+        settings={store}
+        publishedCount={publishedCount}
+        hasPhone={Boolean(profile.phone)}
+        phoneIsValid={normalizeWhatsappNumber(profile.phone) !== null}
+      />
       <p className="max-w-3xl text-muted text-sm">
         El tema (Cielo o Café) se cambia desde el encabezado.
       </p>

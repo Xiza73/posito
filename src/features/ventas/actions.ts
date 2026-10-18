@@ -5,6 +5,7 @@ import { z } from 'zod'
 import { db } from '@/lib/db'
 import { isNextControlFlow } from '@/lib/errors'
 import { ForbiddenError, getCurrentMember, requirePermission } from '@/lib/session'
+import { revalidateStore } from '@/lib/store-cache'
 import { approveSale, SaleError, voidSale } from './data/sales'
 import { voidInputSchema } from './lib/schemas'
 
@@ -61,15 +62,17 @@ export async function voidSaleAction(
   }
 
   // La anulación devuelve stock: refrescar ventas, detalle, caja y productos
-  revalidateSaleChange(parsed.data.id)
+  await revalidateSaleChange(parsed.data.id)
   return { ok: true }
 }
 
-function revalidateSaleChange(id: string) {
+async function revalidateSaleChange(id: string) {
   revalidatePath('/ventas')
   revalidatePath(`/ventas/${id}`)
   revalidatePath('/caja')
   revalidatePath('/productos')
+  // Anular/rechazar devuelve stock: la tienda debe dejar de mostrar "Agotado"
+  await revalidateStore()
 }
 
 export type ApproveResult = { ok: true } | { ok: false; error: string }
@@ -94,6 +97,6 @@ export async function approveSaleAction(input: unknown): Promise<ApproveResult> 
     return { ok: false, error: 'No se pudo aprobar la venta. Inténtalo de nuevo.' }
   }
 
-  revalidateSaleChange(parsed.data)
+  await revalidateSaleChange(parsed.data)
   return { ok: true }
 }

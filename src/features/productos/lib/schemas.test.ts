@@ -81,10 +81,15 @@ describe('productInputSchema', () => {
       priceCents: 350,
       categoryName: 'Bebidas',
       tracksStock: true,
+      showInStore: true,
       initialStock: 0,
       minStock: 5,
       tiers: [],
     })
+  })
+
+  it('showInStore: visible por defecto y respeta false', () => {
+    expect(productInputSchema.parse({ ...valid, showInStore: false }).showInStore).toBe(false)
   })
 
   describe('precio por mayor (tiers)', () => {

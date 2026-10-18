@@ -5,6 +5,7 @@ import { z } from 'zod'
 import { db } from '@/lib/db'
 import { isNextControlFlow } from '@/lib/errors'
 import { ForbiddenError, getCurrentMember, requirePermission } from '@/lib/session'
+import { revalidateStore } from '@/lib/store-cache'
 import {
   adjustStock,
   countStock,
@@ -35,10 +36,11 @@ const text = (formData: FormData, key: string) => {
 }
 
 /** Un ingreso/ajuste/conteo cambia stock: refresca inventario (y sus subrutas), productos y caja. */
-function revalidateStock() {
+async function revalidateStock() {
   revalidatePath('/inventario', 'layout')
   revalidatePath('/productos')
   revalidatePath('/caja')
+  await revalidateStore()
 }
 
 function invalid(error: z.ZodError): InventoryFormState {
@@ -94,7 +96,7 @@ export async function ingresoAction(
       userId: user.id,
       ...parsed.data,
     })
-    revalidateStock()
+    await revalidateStock()
     return { ok: true, message: ingresoMessage(res) }
   } catch (e) {
     return toErrorState(e)
@@ -122,7 +124,7 @@ export async function batchIngresoAction(
       userId: user.id,
       ...parsed.data,
     })
-    revalidateStock()
+    await revalidateStock()
     return { ok: true, message: ingresoMessage(res) }
   } catch (e) {
     return toErrorState(e)
@@ -150,7 +152,7 @@ export async function adjustAction(
       userId: user.id,
       ...parsed.data,
     })
-    revalidateStock()
+    await revalidateStock()
     return {
       ok: true,
       message: `Stock de ${res.name} ajustado: ${res.previous} → ${res.stock} u.`,
@@ -183,7 +185,7 @@ export async function countAction(
       ...parsed.data,
     })
     if (!res.changed) return { ok: true, message: 'El stock ya coincide' }
-    revalidateStock()
+    await revalidateStock()
     const sign = res.delta > 0 ? `+${res.delta}` : String(res.delta)
     return {
       ok: true,

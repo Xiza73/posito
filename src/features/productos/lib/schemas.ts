@@ -96,6 +96,7 @@ export const productInputSchema = z
     priceCents: price,
     categoryName,
     tracksStock: z.boolean(),
+    showInStore: z.boolean().default(true),
     initialStock: count('El stock inicial debe ser un número entero'),
     minStock: count('El stock mínimo debe ser un número entero'),
     tiers: tiersField,
@@ -111,8 +112,10 @@ export const productInputSchema = z
  * Entrada de escritura de un producto. `tiers` es opcional en la capa de datos: ausente = no tocar
  * los niveles (p. ej. otros flujos); presente = reemplazarlos TODOS (vacío = quitar el precio por mayor).
  */
-export type ProductInput = Omit<z.infer<typeof productInputSchema>, 'tiers'> & {
+export type ProductInput = Omit<z.infer<typeof productInputSchema>, 'tiers' | 'showInStore'> & {
   tiers?: PriceTier[]
+  /** Ausente = visible en la tienda al crear / no tocar al editar. */
+  showInStore?: boolean
 }
 
 export const idSchema = z.uuid('Elemento no válido')
