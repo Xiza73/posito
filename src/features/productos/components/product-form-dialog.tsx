@@ -23,6 +23,8 @@ type Props = {
 
 export function ProductFormDialog({ target, categories, imageBase, onClose }: Props) {
   const ref = useRef<HTMLDialogElement>(null)
+  // Mientras una foto se sube/cambia, el formulario queda bloqueado y Esc no cierra el diálogo
+  const [photosBusy, setPhotosBusy] = useState(false)
 
   useEffect(() => {
     const el = ref.current
@@ -35,6 +37,9 @@ export function ProductFormDialog({ target, categories, imageBase, onClose }: Pr
     <dialog
       ref={ref}
       onClose={onClose}
+      onCancel={(e) => {
+        if (photosBusy) e.preventDefault()
+      }}
       aria-labelledby="product-dialog-title"
       className="m-auto max-h-[92vh] w-[min(94vw,30rem)] overflow-auto rounded-card border border-line bg-surface p-6 text-ink shadow-pop backdrop:bg-black/40"
     >
@@ -46,6 +51,8 @@ export function ProductFormDialog({ target, categories, imageBase, onClose }: Pr
           categories={categories}
           imageBase={imageBase}
           onClose={onClose}
+          photosBusy={photosBusy}
+          onPhotosBusyChange={setPhotosBusy}
         />
       ) : null}
     </dialog>
@@ -57,11 +64,15 @@ function ProductForm({
   categories,
   imageBase,
   onClose,
+  photosBusy,
+  onPhotosBusyChange,
 }: {
   product: ProductRow | null
   categories: string[]
   imageBase: string | null
   onClose: () => void
+  photosBusy: boolean
+  onPhotosBusyChange: (busy: boolean) => void
 }) {
   const editing = product !== null
 
@@ -100,7 +111,12 @@ function ProductForm({
       <h2 id="product-dialog-title" className="mb-4 font-semibold text-lg">
         {editing ? 'Editar producto' : 'Nuevo producto'}
       </h2>
-      <form action={action} className="flex flex-col gap-3.5">
+      <form
+        action={action}
+        inert={photosBusy}
+        aria-busy={photosBusy}
+        className={`flex flex-col gap-3.5 transition-opacity ${photosBusy ? 'opacity-70' : ''}`}
+      >
         {product ? <input type="hidden" name="id" value={product.id} /> : null}
 
         {/* La foto se sube contra Storage con el producto ya creado: en el alta solo se avisa */}
@@ -111,6 +127,7 @@ function ProductForm({
               productName={product.name}
               imageBase={imageBase}
               initialPath={product.imagePath}
+              onBusyChange={onPhotosBusyChange}
             />
           ) : (
             <p className="text-muted text-xs">

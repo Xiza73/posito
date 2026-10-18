@@ -38,9 +38,29 @@ export class StorageConfigError extends Error {
 
 const encodePath = (path: string) => path.split('/').map(encodeURIComponent).join('/')
 
+/**
+ * Base de la API de Storage a partir de SUPABASE_URL. Usa solo el origen: tolera que se haya
+ * copiado la URL de la Data API (`…supabase.co/rest/v1/`) o con barra final.
+ */
+export function storageApiBase(supabaseUrl: string): string {
+  const u = new URL(supabaseUrl)
+  if (u.protocol !== 'https:' && u.protocol !== 'http:') throw new StorageConfigError()
+  return `${u.origin}/storage/v1`
+}
+
+/**
+ * Cabeceras de autenticación. Las claves secretas nuevas (`sb_secret_…`) NO son JWT: van solo en
+ * `apikey` (en `Authorization: Bearer` el gateway intenta validarlas como JWT y falla). La clave
+ * legacy `service_role` (JWT, deprecada por Supabase) se manda en ambas, como hace el SDK.
+ */
+export function storageAuthHeaders(serviceKey: string): Record<string, string> {
+  if (serviceKey.startsWith('sb_')) return { apikey: serviceKey }
+  return { authorization: `Bearer ${serviceKey}`, apikey: serviceKey }
+}
+
 export function createStorage({ url, serviceKey, fetch: fetchImpl = fetch }: StorageConfig) {
-  const api = `${url.replace(/\/+$/, '')}/storage/v1`
-  const auth = { authorization: `Bearer ${serviceKey}`, apikey: serviceKey }
+  const api = storageApiBase(url)
+  const auth = storageAuthHeaders(serviceKey)
 
   async function call(operation: string, input: string, init: RequestInit = {}) {
     let res: Response
@@ -135,22 +155,13 @@ export function createStorage({ url, serviceKey, fetch: fetchImpl = fetch }: Sto
         headers: { range: `bytes=0-${length - 1}` },
       })
       if (res.status === 404 || res.status === 400) return null
-      if (!res.ok || !res.body) throw new StorageError('leer objeto', res.status)
-      const reader = res.body.getReader()
-      const out = new Uint8Array(length)
-      let got = 0
-      try {
-        while (got < length) {
-          const { done, value } = await reader.read()
-          if (done) break
-          const take = Math.min(value.length, length - got)
-          out.set(value.subarray(0, take), got)
-          got += take
-        }
-      } finally {
-        await reader.cancel().catch(() => {})
-      }
-      return out.subarray(0, got)
+      if (!res.ok) throw new StorageError('leer objeto', res.status)
+      // Se lee el cuerpo COMPLETO, sin streaming ni cancel(): dentro de Next, `fetch` está parcheado y
+      // duplica el cuerpo (tee); cancelar una copia no termina hasta cancelar la otra y el await quedaba
+      // colgado (la confirmación de la foto tardaba ~40 s). Con Range son 12 bytes; si Supabase
+      // ignorara el Range, el objeto ya se verificó ≤ 1 MB (info) antes de llamar aquí.
+      const bytes = new Uint8Array(await res.arrayBuffer())
+      return bytes.subarray(0, length)
     },
 
     async remove(bucket: string, paths: string[]): Promise<void> {
