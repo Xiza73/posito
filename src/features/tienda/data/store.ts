@@ -30,6 +30,8 @@ export type StoreProfile = {
   hours: string | null
   /** Formato wa.me: 51XXXXXXXXX. */
   whatsapp: string
+  /** Ofrece entrega en estación del Metropolitano (solo el booleano). */
+  metroDelivery: boolean
 }
 
 export type StoreProduct = {
@@ -58,6 +60,7 @@ const PROFILE_COLUMNS = {
   address: organizationSettings.address,
   hours: organizationSettings.storeHours,
   phone: organizationSettings.phone,
+  metroDelivery: organizationSettings.metroDeliveryEnabled,
 }
 
 /** Perfil de la tienda que cumpla `where`, solo si está publicable (activa + WhatsApp + celular válido + slug). */
@@ -84,6 +87,7 @@ async function selectProfile(db: Db, where: SQL | undefined): Promise<StoreProfi
     address: row.address,
     hours: row.hours,
     whatsapp,
+    metroDelivery: row.metroDelivery,
   }
 }
 

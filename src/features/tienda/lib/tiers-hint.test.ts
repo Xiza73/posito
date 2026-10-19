@@ -8,7 +8,7 @@ describe('tiersHint', () => {
         { minQty: 6, unitPriceCents: 270 },
         { minQty: 12, unitPriceCents: 250 },
       ]),
-    ).toMatch(/^desde 12: S\/\s2\.50 c\/u$/)
+    ).toMatch(/^Desde 12: S\/\s2\.50$/)
   })
 
   it('sin niveles = null', () => {

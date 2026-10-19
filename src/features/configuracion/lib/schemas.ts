@@ -95,6 +95,7 @@ export const storeSettingsSchema = z
   .object({
     storeEnabled: z.boolean(),
     hasWhatsapp: z.boolean(),
+    metroDeliveryEnabled: z.boolean(),
     storeSlug: z.string().max(60, 'La dirección es demasiado larga').transform(normalizeStoreSlug),
     storeHours: optionalText('El horario', STORE_HOURS_MAX),
   })

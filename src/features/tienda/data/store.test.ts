@@ -114,7 +114,20 @@ describe('getStoreProfile', () => {
       address: 'Av. Lima 123',
       hours: 'Lun a Sáb 8-21',
       whatsapp: '51987654321',
+      metroDelivery: false,
     })
+  })
+
+  it('expone solo el booleano del Metropolitano', async () => {
+    await db
+      .update(schema.organizationSettings)
+      .set({ metroDeliveryEnabled: true })
+      .where(eqOrg(ORG_A))
+    expect((await getStoreProfile(db, 'bodega-a'))?.metroDelivery).toBe(true)
+    await db
+      .update(schema.organizationSettings)
+      .set({ metroDeliveryEnabled: false })
+      .where(eqOrg(ORG_A))
   })
 
   it('usa el nombre de la organization si no hay nombre comercial', async () => {

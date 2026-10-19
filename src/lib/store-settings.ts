@@ -11,6 +11,7 @@ export type StoreSettings = {
   hasWhatsapp: boolean
   storeSlug: string | null
   storeHours: string | null
+  metroDeliveryEnabled: boolean
 }
 
 export const DEFAULT_STORE_SETTINGS: StoreSettings = {
@@ -18,6 +19,7 @@ export const DEFAULT_STORE_SETTINGS: StoreSettings = {
   hasWhatsapp: false,
   storeSlug: null,
   storeHours: null,
+  metroDeliveryEnabled: false,
 }
 
 export async function getStoreSettings(db: Db, orgId: string): Promise<StoreSettings> {
@@ -27,6 +29,7 @@ export async function getStoreSettings(db: Db, orgId: string): Promise<StoreSett
       hasWhatsapp: organizationSettings.hasWhatsapp,
       storeSlug: organizationSettings.storeSlug,
       storeHours: organizationSettings.storeHours,
+      metroDeliveryEnabled: organizationSettings.metroDeliveryEnabled,
     })
     .from(organizationSettings)
     .where(eq(organizationSettings.organizationId, orgId))

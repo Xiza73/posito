@@ -26,8 +26,9 @@ export default async function TiendaLayout({
     publicImageBase(process.env.SUPABASE_URL),
   )
 
+  // Tema Cielo fijo: la tienda pública es siempre clara, sin importar el tema del back-office
   return (
-    <div className="min-h-dvh bg-page pb-10 text-ink">
+    <div data-theme="cielo" className="min-h-dvh bg-page text-ink">
       <StoreShell
         slug={profile.slug}
         store={{
@@ -35,6 +36,7 @@ export default async function TiendaLayout({
           address: profile.address,
           hours: profile.hours,
           whatsapp: profile.whatsapp,
+          metroDelivery: profile.metroDelivery,
         }}
         catalog={catalog}
       >
