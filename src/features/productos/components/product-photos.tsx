@@ -45,6 +45,7 @@ export function ProductPhotos({
   const [photos, setPhotos] = useState<GalleryPhoto[] | null>(null)
   const [busy, setBusy] = useState<string | null>(null) // 'add' | `${acción}:${photoId}`
   const [error, setError] = useState<string | null>(null)
+  const [loadFailed, setLoadFailed] = useState(false)
   const [mainBusy, setMainBusy] = useState(false)
   const [progress, setProgress] = useState<{ current: number; total: number } | null>(null)
   const anyBusy = busy !== null || mainBusy
@@ -59,7 +60,10 @@ export function ProductPhotos({
     listGalleryAction({ productId }).then((res) => {
       if (!alive) return
       if (res.ok) setPhotos(res.photos)
-      else setError(res.error)
+      else {
+        setLoadFailed(true)
+        setError(res.error)
+      }
     })
     return () => {
       alive = false
@@ -269,7 +273,18 @@ export function ProductPhotos({
           </ul>
         ) : photos ? (
           <p className="text-muted text-xs">Aún no hay fotos extra.</p>
-        ) : null}
+        ) : loadFailed ? null : (
+          <ul aria-busy="true" className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+            <li className="sr-only">Cargando fotos…</li>
+            {[0, 1, 2].map((k) => (
+              <li
+                key={k}
+                aria-hidden="true"
+                className="aspect-[3/2] w-full animate-pulse rounded-ctl bg-surface-2"
+              />
+            ))}
+          </ul>
+        )}
 
         {error ? (
           <p role="alert" className="text-bad text-xs">
