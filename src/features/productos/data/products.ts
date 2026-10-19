@@ -1,8 +1,9 @@
 import { and, asc, eq, ilike, or, sql } from 'drizzle-orm'
 import type { PgDatabase } from 'drizzle-orm/pg-core'
 import type * as schema from '@/db/schema'
-import { category, product, stockMovement } from '@/db/schema'
+import { category, product, productPriceTier, stockMovement } from '@/db/schema'
 import { nameKey, normalizeDisplayName } from '@/lib/name-key'
+import type { PriceTier } from '@/lib/pricing'
 import type { ProductInput } from '../lib/schemas'
 
 // Todas las funciones reciben `db` (o una transacción) para poder probarlas con PGlite, y
@@ -19,8 +20,14 @@ export type ProductRow = {
   stock: number
   minStock: number
   active: boolean
+  /** Visible en la tienda online pública. */
+  showInStore: boolean
+  /** Base de la foto en Storage (src/lib/product-image.ts); null = sin foto. */
+  imagePath: string | null
   categoryId: string | null
   categoryName: string | null
+  /** Niveles de precio por mayor, de menor a mayor cantidad (vacío = sin). */
+  tiers: PriceTier[]
 }
 
 export type CategoryRow = { id: string; name: string; productCount: number }
@@ -41,7 +48,7 @@ export async function listProducts(
 ): Promise<ProductRow[]> {
   const q = query.trim()
   const pattern = `%${escapeLike(q)}%`
-  return db
+  const rows = await db
     .select({
       id: product.id,
       name: product.name,
@@ -51,6 +58,8 @@ export async function listProducts(
       stock: product.stock,
       minStock: product.minStock,
       active: product.active,
+      showInStore: product.showInStore,
+      imagePath: product.imagePath,
       categoryId: product.categoryId,
       categoryName: category.name,
     })
@@ -65,6 +74,49 @@ export async function listProducts(
       ),
     )
     .orderBy(asc(product.name))
+
+  const tierRows = await db
+    .select({
+      productId: productPriceTier.productId,
+      minQty: productPriceTier.minQty,
+      unitPriceCents: productPriceTier.unitPriceCents,
+    })
+    .from(productPriceTier)
+    .where(eq(productPriceTier.organizationId, orgId))
+    .orderBy(asc(productPriceTier.minQty))
+  const tiersOf = new Map<string, PriceTier[]>()
+  for (const { productId, ...tier } of tierRows) {
+    tiersOf.set(productId, [...(tiersOf.get(productId) ?? []), tier])
+  }
+  return rows.map((r) => ({ ...r, tiers: tiersOf.get(r.id) ?? [] }))
+}
+
+/**
+ * Reemplaza TODOS los niveles del producto (borrar + insertar) dentro de la transacción del llamador.
+ * Siempre acotado por bodega + producto. El producto ya se actualizó antes: esa fila queda bloqueada
+ * y serializa este reemplazo con un cobro en curso (que bloquea los productos `FOR UPDATE`).
+ */
+async function replaceTiers(
+  tx: Db,
+  { orgId, productId, tiers }: { orgId: string; productId: string; tiers: PriceTier[] },
+) {
+  // Bloquea la fila del producto aquí mismo (idempotente dentro de la transacción): no depende de que
+  // el llamador ya haya escrito el producto. Misma fila que bloquea el cobro (FOR UPDATE).
+  const [locked] = await tx
+    .select({ id: product.id })
+    .from(product)
+    .where(and(eq(product.id, productId), eq(product.organizationId, orgId)))
+    .for('update')
+  if (!locked) throw new Error('replaceTiers: el producto no existe en esta bodega')
+  await tx
+    .delete(productPriceTier)
+    .where(
+      and(eq(productPriceTier.organizationId, orgId), eq(productPriceTier.productId, productId)),
+    )
+  if (tiers.length === 0) return
+  await tx
+    .insert(productPriceTier)
+    .values(tiers.map((t) => ({ organizationId: orgId, productId, ...t })))
 }
 
 /** Busca la categoría por `name_key` (sin mayúsculas, tildes ni espacios sobrantes) en la bodega, o la crea. */
@@ -110,10 +162,15 @@ export async function createProduct(
         barcode: input.barcode,
         priceCents: input.priceCents,
         tracksStock: input.tracksStock,
+        showInStore: input.showInStore ?? true,
         stock,
         minStock: input.tracksStock ? input.minStock : 0,
       })
       .returning({ id: product.id })
+
+    if (input.tiers?.length) {
+      await replaceTiers(tx, { orgId, productId: created.id, tiers: input.tiers })
+    }
 
     if (stock > 0) {
       await tx.insert(stockMovement).values({
@@ -157,10 +214,14 @@ export async function updateProduct(
         barcode: input.barcode,
         priceCents: input.priceCents,
         tracksStock: input.tracksStock,
+        ...(input.showInStore === undefined ? {} : { showInStore: input.showInStore }),
         minStock: input.tracksStock ? input.minStock : 0,
       })
       .where(and(eq(product.id, id), eq(product.organizationId, orgId)))
       .returning({ id: product.id })
+    if (updated && input.tiers !== undefined) {
+      await replaceTiers(tx, { orgId, productId: id, tiers: input.tiers })
+    }
     return updated ?? null
   })
 }
@@ -227,3 +288,42 @@ export async function deleteCategory(
     .returning({ id: category.id })
   return rows.length > 0
 }
+
+/** Base de la foto actual: undefined = el producto no existe en ESA bodega; null = sin foto. */
+export async function getProductImagePath(
+  db: Db,
+  { orgId, id }: { orgId: string; id: string },
+): Promise<string | null | undefined> {
+  const [row] = await db
+    .select({ imagePath: product.imagePath })
+    .from(product)
+    .where(and(eq(product.id, id), eq(product.organizationId, orgId)))
+    .limit(1)
+  return row ? row.imagePath : undefined
+}
+
+/**
+ * Fija (o quita, con null) la foto; solo `clearProductImage` es público: fijar pasa por consumeUploadAndSetImage del producto en una transacción y devuelve la base ANTERIOR
+ * para borrar sus objetos después del commit. null = el producto no existe en esa bodega.
+ */
+async function setProductImage(
+  db: Db,
+  { orgId, id, imagePath }: { orgId: string; id: string; imagePath: string | null },
+): Promise<{ previous: string | null } | null> {
+  return db.transaction(async (tx) => {
+    const [found] = await tx
+      .select({ imagePath: product.imagePath })
+      .from(product)
+      .where(and(eq(product.id, id), eq(product.organizationId, orgId)))
+      .for('update')
+    if (!found) return null
+    await tx
+      .update(product)
+      .set({ imagePath })
+      .where(and(eq(product.id, id), eq(product.organizationId, orgId)))
+    return { previous: found.imagePath }
+  })
+}
+
+export const clearProductImage = (db: Db, args: { orgId: string; id: string }) =>
+  setProductImage(db, { ...args, imagePath: null })

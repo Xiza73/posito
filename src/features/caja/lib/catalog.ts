@@ -1,3 +1,5 @@
+import type { PriceTier } from '@/lib/pricing'
+
 /** Producto vendible en la caja (precios en céntimos enteros). */
 export type CatalogProduct = {
   id: string
@@ -8,6 +10,10 @@ export type CatalogProduct = {
   stock: number
   /** false = se prepara al momento (ej. café pasado): sin límite de stock. */
   tracksStock: boolean
+  /** Base de la foto en Storage (src/lib/product-image.ts); null = sin foto. */
+  imagePath: string | null
+  /** Niveles de precio por mayor (vacío = sin). Solo para mostrar: el cobro los recalcula en el servidor. */
+  tiers: PriceTier[]
 }
 
 export function isSoldOut(p: Pick<CatalogProduct, 'tracksStock' | 'stock'>): boolean {

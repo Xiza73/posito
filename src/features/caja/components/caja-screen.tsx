@@ -4,6 +4,7 @@ import { useRef, useState, useTransition } from 'react'
 import { ReceiptDialog } from '@/components/receipt/receipt-dialog'
 import type { CustomerOption } from '@/lib/customer-input'
 import type { PaymentMethod } from '@/lib/payment'
+import { unitPriceFor } from '@/lib/pricing'
 import type { SaleSummary } from '@/lib/receipt-lines'
 import { checkoutAction } from '../actions'
 import { type CatalogProduct, canAddMore, matchesQuery } from '../lib/catalog'
@@ -19,18 +20,37 @@ import { TicketPanel } from './ticket-panel'
 /** id de producto -> cantidad. */
 type Cart = Record<string, number>
 
+function withoutKey<T>(rec: Record<string, T>, key: string): Record<string, T> {
+  const { [key]: _removed, ...rest } = rec
+  return rest
+}
+
 type Props = {
   products: CatalogProduct[]
   /** Categorías con al menos un producto activo (los chips agregan "Todos"). */
   categories: string[]
   /** `customer:create`: habilita el alta rápida de clientes en el selector. */
   canCreateCustomer: boolean
+  /** Base pública de las fotos (publicImageBase) o null. */
+  imageBase: string | null
+  /** La bodega permite editar el total de cada línea (ajuste "Precios en la Caja"). */
+  allowManualPrice: boolean
 }
 
-export function CajaScreen({ products, categories, canCreateCustomer }: Props) {
+export function CajaScreen({
+  products,
+  categories,
+  canCreateCustomer,
+  imageBase,
+  allowManualPrice,
+}: Props) {
   const [query, setQuery] = useState('')
   const [category, setCategory] = useState<string | null>(null)
   const [cart, setCart] = useState<Cart>({})
+  // id de producto -> total editado a mano (céntimos). Se descarta al cambiar la cantidad de esa línea.
+  const [manual, setManual] = useState<Record<string, number>>({})
+  // Líneas cuyo precio editado se restableció por un cambio de cantidad (aviso sutil)
+  const [resetIds, setResetIds] = useState<Record<string, true>>({})
   const [pay, setPay] = useState<PaymentMethod>('efectivo')
   const [sheetOpen, setSheetOpen] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -53,9 +73,24 @@ export function CajaScreen({ products, categories, canCreateCustomer }: Props) {
 
   const lines: CartLineView[] = Object.entries(cart).flatMap(([id, qty]) => {
     const item = byId.get(id)
-    return item ? [{ item, qty }] : []
+    // Solo para mostrar: el servidor recalcula el nivel por mayor al cobrar
+    return item
+      ? [
+          {
+            item,
+            qty,
+            price: unitPriceFor({ basePriceCents: item.priceCents, tiers: item.tiers }, qty),
+            manualTotalCents: allowManualPrice ? (manual[id] ?? null) : null,
+            manualWasReset: resetIds[id] === true,
+          },
+        ]
+      : []
   })
-  const priced = lines.map((l) => ({ unitPriceCents: l.item.priceCents, qty: l.qty }))
+  const priced = lines.map((l) => ({
+    unitPriceCents: l.price.unitPriceCents,
+    qty: l.qty,
+    totalCents: l.manualTotalCents ?? undefined,
+  }))
   const totals = computeTotals(priced)
   const count = itemCount(priced)
 
@@ -67,21 +102,30 @@ export function CajaScreen({ products, categories, canCreateCustomer }: Props) {
 
   function changeQty(id: string, delta: 1 | -1) {
     if (unconfirmed) return
-    setCart((prev) => {
-      const item = byId.get(id)
-      if (!item) return prev
-      const current = prev[id] ?? 0
-      if (delta > 0 && !canAddMore(item, current)) return prev
-      const qty = current + delta
-      const next = { ...prev }
-      if (qty <= 0) delete next[id]
-      else next[id] = qty
-      return next
-    })
+    const item = byId.get(id)
+    if (!item) return
+    const current = cart[id] ?? 0
+    if (delta > 0 && !canAddMore(item, current)) return
+    const qty = current + delta
+    // Un total editado no vale para otra cantidad: se vuelve al precio automático y se avisa
+    if (manual[id] !== undefined) {
+      setManual(withoutKey(manual, id))
+      if (qty > 0) setResetIds((r) => ({ ...r, [id]: true }))
+    }
+    if (qty <= 0) setResetIds((r) => withoutKey(r, id))
+    setCart(qty <= 0 ? withoutKey(cart, id) : { ...cart, [id]: qty })
+  }
+
+  function setManualTotal(id: string, cents: number | null) {
+    if (unconfirmed || !allowManualPrice) return
+    setResetIds((r) => withoutKey(r, id))
+    setManual((prev) => (cents === null ? withoutKey(prev, id) : { ...prev, [id]: cents }))
   }
 
   function clear() {
     setCart({})
+    setManual({})
+    setResetIds({})
     setCustomer(null)
     setSheetOpen(false)
     setError(null)
@@ -96,7 +140,12 @@ export function CajaScreen({ products, categories, canCreateCustomer }: Props) {
       saleId: saleIdRef.current,
       paymentMethod: pay,
       customerId: customer?.id,
-      items: lines.map((l) => ({ productId: l.item.id, quantity: l.qty })),
+      expectedTotalCents: totals.total,
+      items: lines.map((l) => ({
+        productId: l.item.id,
+        quantity: l.qty,
+        ...(l.manualTotalCents !== null ? { lineTotalCents: l.manualTotalCents } : {}),
+      })),
     }
     setError(null)
     startTransition(async () => {
@@ -137,7 +186,7 @@ export function CajaScreen({ products, categories, canCreateCustomer }: Props) {
           ) : (
             <div className="grid grid-cols-[repeat(auto-fill,minmax(140px,1fr))] gap-3">
               {visible.map((item) => (
-                <ProductCard key={item.id} item={item} onAdd={add} />
+                <ProductCard key={item.id} item={item} imageBase={imageBase} onAdd={add} />
               ))}
             </div>
           )}
@@ -155,6 +204,9 @@ export function CajaScreen({ products, categories, canCreateCustomer }: Props) {
           onClearCustomer={() => setCustomer(null)}
           onPay={setPay}
           onChangeQty={changeQty}
+          allowManualPrice={allowManualPrice}
+          onSetManual={setManualTotal}
+          locked={unconfirmed}
           onClear={clear}
           onCharge={charge}
         />
@@ -175,6 +227,9 @@ export function CajaScreen({ products, categories, canCreateCustomer }: Props) {
           onClose={() => setSheetOpen(false)}
           onPay={setPay}
           onChangeQty={changeQty}
+          allowManualPrice={allowManualPrice}
+          onSetManual={setManualTotal}
+          locked={unconfirmed}
           onCharge={charge}
         />
       </div>

@@ -8,6 +8,15 @@ import type { SaleListRow } from '../data/sales'
 
 const TH = 'px-4 py-3 font-medium'
 
+/** Marca de ventas con algún precio editado a mano en la Caja. */
+function EditedBadge() {
+  return (
+    <span className="ml-1.5 rounded-full border border-line px-2 py-0.5 font-medium text-[11px] text-warn">
+      Precio editado
+    </span>
+  )
+}
+
 const amountClass = (r: SaleListRow) => (r.status === 'anulada' ? 'text-muted line-through' : '')
 
 /** Tabla en md+ y tarjetas en móvil. Cada fila lleva al detalle. */
@@ -59,6 +68,7 @@ export function SalesList({ rows, showCashier }: { rows: SaleListRow[]; showCash
                 </Link>
                 <div className="text-muted text-xs">
                   {r.itemCount} {r.itemCount === 1 ? 'unidad' : 'unidades'}
+                  {r.hasManualPrice ? <EditedBadge /> : null}
                 </div>
               </td>
               <td className="px-4 py-3 text-muted">{formatReceiptDate(r.createdAt)}</td>
@@ -97,6 +107,7 @@ export function SalesList({ rows, showCashier }: { rows: SaleListRow[]; showCash
               <div className="text-muted text-xs">
                 {PAYMENT_LABELS[r.paymentMethod]}
                 {showCashier && r.cashierName ? ` · ${r.cashierName}` : ''}
+                {r.hasManualPrice ? <EditedBadge /> : null}
               </div>
             </Link>
           </li>

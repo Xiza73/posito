@@ -154,10 +154,28 @@ export default async function VentaPage({ params }: { params: Promise<{ id: stri
             {sale.lines.map((l, i) => (
               // biome-ignore lint/suspicious/noArrayIndexKey: lista estática; dos productos pueden llamarse igual
               <tr key={i} className="border-line border-t">
-                <td className="px-4 py-3">{l.name}</td>
+                <td className="px-4 py-3">
+                  {l.name}
+                  {l.priceSource === 'mayor' ? (
+                    <span className="mt-0.5 block text-muted text-xs">
+                      Por mayor: precio normal {formatCents(l.listUnitPriceCents)}, ahorro{' '}
+                      {formatCents((l.listUnitPriceCents - l.unitPriceCents) * l.qty)}
+                    </span>
+                  ) : null}
+                  {l.priceSource === 'manual' ? (
+                    <span className="mt-0.5 block text-muted text-xs">
+                      Precio editado: normal {formatCents(l.listUnitPriceCents * l.qty)}, cobrado{' '}
+                      {formatCents(l.lineTotalCents)}
+                      {sale.cashierName ? `. Editado por ${sale.cashierName}` : ''}
+                    </span>
+                  ) : null}
+                </td>
                 <td className="px-4 py-3 text-right font-mono">{l.qty}</td>
                 <td className="hidden px-4 py-3 text-right font-mono sm:table-cell">
-                  {formatCents(l.unitPriceCents)}
+                  {l.priceSource === 'mayor' ? (
+                    <s className="mr-1.5 text-muted">{formatCents(l.listUnitPriceCents)}</s>
+                  ) : null}
+                  {l.priceSource === 'manual' ? '—' : formatCents(l.unitPriceCents)}
                 </td>
                 <td className="px-4 py-3 text-right font-mono">{formatCents(l.lineTotalCents)}</td>
               </tr>

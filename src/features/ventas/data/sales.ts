@@ -43,6 +43,8 @@ export type SaleListRow = {
   cashierName: string | null
   /** Unidades vendidas (suma de cantidades). */
   itemCount: number
+  /** Alguna línea se cobró con precio editado a mano. */
+  hasManualPrice: boolean
 }
 
 export type SalesSummary = {
@@ -76,6 +78,15 @@ export function parseReceiptQuery(q: string): { series?: string; number: number 
   return { series: m[1]?.toUpperCase(), number: Number(m[2]) }
 }
 
+/** La venta tiene alguna línea con precio editado a mano. */
+const hasManualLine = sql`exists (select 1 from ${saleItem} where ${saleItem.saleId} = ${sale.id} and ${saleItem.priceSource} = 'manual')`
+
+/** Σ (precio normal × cantidad − importe cobrado) de las líneas manuales; positivo = descuento. */
+const manualDifference =
+  sql<number>`coalesce((select sum(${saleItem.listUnitPriceCents} * ${saleItem.quantity} - ${saleItem.lineTotalCents}) from ${saleItem} where ${saleItem.saleId} = ${sale.id} and ${saleItem.priceSource} = 'manual'), 0)`.mapWith(
+    Number,
+  )
+
 function whereOf({ orgId, viewer, filters }: SalesScope): SQL {
   const { start, end } = limaRangeToUtc(filters.from, filters.to)
   // Buscar una boleta concreta ignora las fechas: el cliente llega con una boleta de otro día
@@ -100,6 +111,8 @@ function whereOf({ orgId, viewer, filters }: SalesScope): SQL {
       sql`exists (select 1 from ${saleItem} where ${saleItem.saleId} = ${sale.id} and ${saleItem.productId} = ${filters.productId})`,
     )
   }
+
+  if (filters.edited) conds.push(hasManualLine)
 
   if (filters.receipt) {
     const r = parseReceiptQuery(filters.receipt)
@@ -135,6 +148,7 @@ export async function listSales(
       status: sale.status,
       cashierName: user.name,
       itemCount: unitsOf,
+      hasManualPrice: sql<boolean>`${hasManualLine}`,
     })
     .from(sale)
     .leftJoin(user, eq(user.id, sale.cashierId))
@@ -235,6 +249,8 @@ export async function getSale(
       name: saleItem.productName,
       qty: saleItem.quantity,
       unitPriceCents: saleItem.unitPriceCents,
+      listUnitPriceCents: saleItem.listUnitPriceCents,
+      priceSource: saleItem.priceSource,
       lineTotalCents: saleItem.lineTotalCents,
     })
     .from(saleItem)
@@ -437,6 +453,8 @@ export async function exportRows(db: Db, scope: SalesScope): Promise<ExportResul
       igvCents: sale.igvCents,
       totalCents: sale.totalCents,
       voidReason: sale.voidReason,
+      priceEdited: sql<boolean>`${hasManualLine}`,
+      priceDifferenceCents: manualDifference,
     })
     .from(sale)
     .leftJoin(user, eq(user.id, sale.cashierId))

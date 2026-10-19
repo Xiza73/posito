@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { normalizeDocument, validateDocument } from '@/lib/document'
 import { normalizeDisplayName } from '@/lib/name-key'
+import { normalizeStoreSlug, validateStoreSlug } from '@/lib/store-slug'
 import { NO_CONTROL_MESSAGE, noControl } from '@/lib/text-guard'
 
 export const receiptSeriesSchema = z.object({
@@ -26,6 +27,10 @@ export const settingsSchema = z.object({
 })
 
 export type SettingsInput = z.output<typeof settingsSchema>
+
+export const manualPriceSchema = z.object({
+  allowManualPrice: z.boolean(),
+})
 
 export const BUSINESS_LIMITS = {
   tradeName: 80,
@@ -82,3 +87,31 @@ export const businessProfileSchema = z
   .transform((v) => ({ ...v, ruc: v.ruc ? normalizeDocument(v.ruc) : null }))
 
 export type BusinessProfileFormInput = z.output<typeof businessProfileSchema>
+
+export const STORE_HOURS_MAX = 200
+
+/** Un checkbox sin marcar no viaja en el FormData: ausente = false. */
+export const storeSettingsSchema = z
+  .object({
+    storeEnabled: z.boolean(),
+    hasWhatsapp: z.boolean(),
+    metroDeliveryEnabled: z.boolean(),
+    storeSlug: z.string().max(60, 'La dirección es demasiado larga').transform(normalizeStoreSlug),
+    storeHours: optionalText('El horario', STORE_HOURS_MAX),
+  })
+  .superRefine((v, ctx) => {
+    // Con la tienda apagada se puede dejar vacío; si escribió algo, debe ser válido
+    if (v.storeSlug === '') {
+      if (v.storeEnabled) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['storeSlug'],
+          message: 'Define la dirección de tu tienda para activarla',
+        })
+      }
+      return
+    }
+    const error = validateStoreSlug(v.storeSlug)
+    if (error) ctx.addIssue({ code: 'custom', path: ['storeSlug'], message: error })
+  })
+  .transform((v) => ({ ...v, storeSlug: v.storeSlug === '' ? null : v.storeSlug }))

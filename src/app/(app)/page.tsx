@@ -26,6 +26,7 @@ export default async function InicioPage({ searchParams }: { searchParams: Searc
   // Las pendientes no son del período: el enlace abarca el último año (rango máximo de Ventas)
   const pendingHref = `/ventas?estado=pendiente&desde=${addDays(d.today, -365)}&hasta=${d.today}`
   const voidedHref = `/ventas?estado=anulada&desde=${d.range.from}&hasta=${d.range.to}`
+  const editedHref = `/ventas?editado=1&desde=${d.range.from}&hasta=${d.range.to}`
 
   return (
     <div className="flex animate-fade-up flex-col gap-4 p-4 md:px-7 md:py-6">
@@ -50,6 +51,8 @@ export default async function InicioPage({ searchParams }: { searchParams: Searc
             voidedCount={d.voidedCount}
             pendingHref={pendingHref}
             voidedHref={voidedHref}
+            editedPrices={d.editedPrices}
+            editedHref={editedHref}
           />
         </div>
       </DashboardFrame>

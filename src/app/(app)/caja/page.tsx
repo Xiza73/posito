@@ -1,13 +1,19 @@
 import Link from 'next/link'
 import { CajaScreen } from '@/features/caja/components/caja-screen'
 import { getCatalog } from '@/features/caja/data/catalog'
+import { db } from '@/lib/db'
 import { can } from '@/lib/permissions'
+import { publicImageBase } from '@/lib/product-image'
 import { getCurrentMember } from '@/lib/session'
+import { getSettings } from '@/lib/settings'
 
 export default async function CajaPage() {
   // La bodega sale de la sesión; el layout no basta (no se re-ejecuta en navegación cliente).
   const { member, organization } = await getCurrentMember()
-  const { products, categories } = await getCatalog(organization.id)
+  const [{ products, categories }, settings] = await Promise.all([
+    getCatalog(organization.id),
+    getSettings(db, organization.id),
+  ])
 
   if (products.length === 0) {
     return (
@@ -31,7 +37,9 @@ export default async function CajaPage() {
     <CajaScreen
       products={products}
       categories={categories}
+      imageBase={publicImageBase(process.env.SUPABASE_URL)}
       canCreateCustomer={can(member.role, { customer: ['create'] })}
+      allowManualPrice={settings.allowManualPrice}
     />
   )
 }

@@ -1,13 +1,23 @@
 import { and, asc, eq, inArray, sql } from 'drizzle-orm'
-import { customer, product, receiptSeries, sale, saleItem, stockMovement, user } from '@/db/schema'
+import {
+  customer,
+  product,
+  productPriceTier,
+  receiptSeries,
+  sale,
+  saleItem,
+  stockMovement,
+  user,
+} from '@/db/schema'
 import { toSnapshot } from '@/lib/business-profile'
 import type { Db } from '@/lib/db-types'
 import type { DocumentType } from '@/lib/document'
 import { uniqueViolation } from '@/lib/errors'
 import type { PaymentMethod } from '@/lib/payment'
+import { type PriceTier, resolveLine } from '@/lib/pricing'
 import { DEFAULT_RECEIPT_SERIES } from '@/lib/receipt'
 import type { SaleSummary } from '@/lib/receipt-lines'
-import { getBusinessProfile, snapshotOrCurrent } from '@/lib/settings'
+import { getBusinessProfile, getSettingsForCheckout, snapshotOrCurrent } from '@/lib/settings'
 import { MAX_QTY } from '../lib/schemas'
 import { computeTotals } from '../lib/totals'
 
@@ -51,6 +61,24 @@ export class CustomerUnavailableError extends CheckoutError {
   }
 }
 
+/** El total que vio el cajero ya no coincide con el del servidor (precios o niveles cambiaron). */
+export class PriceChangedError extends CheckoutError {
+  constructor() {
+    super('Los precios cambiaron. Revisa el ticket antes de cobrar.')
+    this.name = 'PriceChangedError'
+  }
+}
+
+type MergedItem = { qty: number; manualTotalCents: number | null }
+
+/** Se mandó un precio editado pero la bodega no lo tiene habilitado: no se escribe nada. */
+export class ManualPriceDisabledError extends CheckoutError {
+  constructor() {
+    super('La edición de precios no está habilitada')
+    this.name = 'ManualPriceDisabledError'
+  }
+}
+
 const GENERIC = 'No se pudo registrar la venta. Inténtalo de nuevo.'
 
 type Tx = Parameters<Parameters<Db['transaction']>[0]>[0]
@@ -72,19 +100,43 @@ export type CheckoutParams = {
    * verifica que sea de ESTA bodega y esté activo; nombre y documento salen de la DB.
    */
   customerId?: string | null
-  /** Solo producto y cantidad: los precios SIEMPRE se leen de la DB. */
-  items: { productId: string; quantity: number }[]
+  /**
+   * Total que el cajero ve en pantalla. SOLO es un guard: si difiere del total calculado por el
+   * servidor se rechaza TODO antes de escribir nada. Nunca se usa como precio. Un reintento
+   * idempotente de una venta ya guardada NO se rechaza por esto.
+   */
+  expectedTotalCents?: number
+  /**
+   * Producto y cantidad: los precios SIEMPRE se leen de la DB. `lineTotalCents` (opcional) es el
+   * total editado a mano en la Caja: solo se acepta si la bodega tiene activo `allowManualPrice`
+   * (se lee dentro de la transacción) y reemplaza al precio normal/por mayor de esa línea.
+   */
+  items: { productId: string; quantity: number; lineTotalCents?: number }[]
 }
 
-/** Suma las cantidades de un mismo producto y valida el rango. */
-function mergeItems(items: CheckoutParams['items']): Map<string, number> {
+/**
+ * Suma las cantidades de un mismo producto y valida el rango. Un total manual (precio editado) solo
+ * se admite si el producto aparece en UNA línea: con duplicados no hay forma no ambigua de repartirlo.
+ */
+function mergeItems(items: CheckoutParams['items']): Map<string, MergedItem> {
   if (items.length === 0) throw new CheckoutError('El ticket está vacío')
-  const merged = new Map<string, number>()
-  for (const { productId, quantity } of items) {
+  const merged = new Map<string, MergedItem>()
+  for (const { productId, quantity, lineTotalCents } of items) {
     if (!Number.isInteger(quantity) || quantity < 1) throw new CheckoutError('Cantidad inválida')
-    merged.set(productId, (merged.get(productId) ?? 0) + quantity)
+    const manual = lineTotalCents ?? null
+    if (manual !== null && (!Number.isInteger(manual) || manual < 1 || manual > MAX_INT)) {
+      throw new CheckoutError('Precio inválido')
+    }
+    const prev = merged.get(productId)
+    if (prev && (manual !== null || prev.manualTotalCents !== null)) {
+      throw new CheckoutError('Une las líneas antes de editar el precio')
+    }
+    merged.set(productId, {
+      qty: (prev?.qty ?? 0) + quantity,
+      manualTotalCents: manual,
+    })
   }
-  for (const qty of merged.values()) {
+  for (const { qty } of merged.values()) {
     if (qty > MAX_QTY) throw new CheckoutError(`La cantidad máxima por producto es ${MAX_QTY}`)
   }
   return merged
@@ -130,6 +182,13 @@ export async function checkout(db: Db, params: CheckoutParams): Promise<SaleSumm
       const twin = await findExisting(tx, orgId, userId, saleId)
       if (twin) return twin
 
+      // Precio editado a mano: solo si la bodega lo permite. Se lee DENTRO de la transacción (no de la
+      // action) y después del reintento gemelo: reintentar una venta ya guardada no depende del ajuste.
+      const hasManual = [...merged.values()].some((m) => m.manualTotalCents !== null)
+      if (hasManual && !(await getSettingsForCheckout(tx, orgId)).allowManualPrice) {
+        throw new ManualPriceDisabledError()
+      }
+
       // Después del reintento gemelo: reintentar una venta ya guardada no depende de que el cliente
       // siga activo. Esta MISMA consulta verifica (bodega + activo) y trae el snapshot que se
       // guarda en la venta; `FOR SHARE` impide que lo editen o desactiven hasta el commit.
@@ -161,18 +220,58 @@ export async function checkout(db: Db, params: CheckoutParams): Promise<SaleSumm
 
       if (products.length !== ids.length) throw await unavailable(tx, orgId, ids, products)
 
-      const priced = products.map((p) => ({ p, qty: merged.get(p.id) ?? 0 }))
+      // Precio por mayor: el nivel lo decide el SERVIDOR con la cantidad ya sumada por producto y los
+      // niveles de ESTA bodega leídos bajo el bloqueo de los productos. El cliente solo manda cantidades.
+      const tierRows = await tx
+        .select({
+          productId: productPriceTier.productId,
+          minQty: productPriceTier.minQty,
+          unitPriceCents: productPriceTier.unitPriceCents,
+        })
+        .from(productPriceTier)
+        .where(
+          and(eq(productPriceTier.organizationId, orgId), inArray(productPriceTier.productId, ids)),
+        )
+      const tiersOf = new Map<string, PriceTier[]>()
+      for (const { productId, ...tier } of tierRows) {
+        tiersOf.set(productId, [...(tiersOf.get(productId) ?? []), tier])
+      }
+
+      const priced = products.map((p) => {
+        const { qty, manualTotalCents } = merged.get(p.id) ?? { qty: 0, manualTotalCents: null }
+        const price = resolveLine(
+          { basePriceCents: p.priceCents, tiers: tiersOf.get(p.id) ?? [] },
+          qty,
+          manualTotalCents,
+        )
+        return {
+          p,
+          qty,
+          unitPriceCents: price.unitPriceCents,
+          lineTotalCents: price.lineTotalCents,
+          source: price.source,
+        }
+      })
       for (const { p, qty } of priced) {
         if (p.tracksStock && p.stock < qty) throw new InsufficientStockError(p.name, p.stock)
       }
 
       const totals = computeTotals(
-        priced.map(({ p, qty }) => ({ unitPriceCents: p.priceCents, qty })),
+        priced.map(({ unitPriceCents, qty, lineTotalCents }) => ({
+          unitPriceCents,
+          qty,
+          totalCents: lineTotalCents,
+        })),
       )
+
+      // Guard contra un catálogo viejo en pantalla: ANTES del correlativo y de cualquier escritura
+      if (params.expectedTotalCents !== undefined && params.expectedTotalCents !== totals.total) {
+        throw new PriceChangedError()
+      }
 
       // La columna es integer (máx. 2 147 483 647 céntimos ≈ S/ 21 millones): error claro, no un crash
       const tooBig = (n: number) => n > MAX_INT
-      if (tooBig(totals.total) || priced.some(({ p, qty }) => tooBig(p.priceCents * qty))) {
+      if (tooBig(totals.total) || priced.some(({ lineTotalCents }) => tooBig(lineTotalCents))) {
         throw new CheckoutError('El total de la venta supera el máximo permitido')
       }
 
@@ -209,13 +308,15 @@ export async function checkout(db: Db, params: CheckoutParams): Promise<SaleSumm
       })
 
       await tx.insert(saleItem).values(
-        priced.map(({ p, qty }) => ({
+        priced.map(({ p, qty, unitPriceCents, lineTotalCents, source }) => ({
           saleId,
           productId: p.id,
           productName: p.name,
-          unitPriceCents: p.priceCents,
+          unitPriceCents,
+          listUnitPriceCents: p.priceCents,
+          priceSource: source,
           quantity: qty,
-          lineTotalCents: p.priceCents * qty,
+          lineTotalCents,
         })),
       )
 
@@ -297,6 +398,8 @@ async function findExisting(
       name: saleItem.productName,
       qty: saleItem.quantity,
       unitPriceCents: saleItem.unitPriceCents,
+      listUnitPriceCents: saleItem.listUnitPriceCents,
+      priceSource: saleItem.priceSource,
       lineTotalCents: saleItem.lineTotalCents,
     })
     .from(saleItem)

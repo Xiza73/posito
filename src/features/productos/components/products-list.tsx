@@ -1,3 +1,4 @@
+import { ProductThumb } from '@/components/product-thumb'
 import { StockBadge } from '@/components/ui/stock-badge'
 import { formatCents } from '@/lib/format'
 import type { ProductRow } from '../data/products'
@@ -8,9 +9,39 @@ type Props = {
   canUpdate: boolean
   canDelete: boolean
   onEdit: (product: ProductRow) => void
+  imageBase: string | null
 }
 
 const TH = 'px-4 py-3 font-medium'
+
+function Thumb({ p, imageBase }: { p: ProductRow; imageBase: string | null }) {
+  return (
+    <ProductThumb
+      imageBase={imageBase}
+      imagePath={p.imagePath}
+      name={p.name}
+      width={48}
+      height={48}
+      className="size-12 flex-none rounded-ctl"
+    />
+  )
+}
+
+function WholesaleTag() {
+  return (
+    <span className="ml-2 rounded-full border border-accent px-2 py-0.5 font-normal text-accent text-xs">
+      Por mayor
+    </span>
+  )
+}
+
+function HiddenInStoreTag() {
+  return (
+    <span className="ml-2 rounded-full border border-line px-2 py-0.5 font-normal text-muted text-xs">
+      Oculto en tienda
+    </span>
+  )
+}
 
 function InactiveTag() {
   return (
@@ -20,7 +51,9 @@ function InactiveTag() {
   )
 }
 
-function Actions({ p, canUpdate, canDelete, onEdit }: { p: ProductRow } & Omit<Props, 'products'>) {
+type ActionProps = Pick<Props, 'canUpdate' | 'canDelete' | 'onEdit'>
+
+function Actions({ p, canUpdate, canDelete, onEdit }: { p: ProductRow } & ActionProps) {
   // Desactivar pide product:delete; reactivar y editar piden product:update.
   const canToggle = p.active ? canDelete : canUpdate
   if (!canUpdate && !canToggle) return null
@@ -42,7 +75,7 @@ function Actions({ p, canUpdate, canDelete, onEdit }: { p: ProductRow } & Omit<P
 }
 
 /** Tabla en md+ y tarjetas en móvil. */
-export function ProductsList({ products, ...actions }: Props) {
+export function ProductsList({ products, imageBase, ...actions }: Props) {
   const showActions = actions.canUpdate || actions.canDelete
 
   if (products.length === 0) {
@@ -81,11 +114,20 @@ export function ProductsList({ products, ...actions }: Props) {
           {products.map((p) => (
             <tr key={p.id} className={`border-line border-t ${p.active ? '' : 'opacity-60'}`}>
               <td className="px-4 py-3">
-                <div className="font-medium">
-                  {p.name}
-                  {p.active ? null : <InactiveTag />}
+                <div className="flex items-center gap-3">
+                  <Thumb p={p} imageBase={imageBase} />
+                  <div>
+                    <div className="font-medium">
+                      {p.name}
+                      {p.tiers.length > 0 ? <WholesaleTag /> : null}
+                      {p.active ? null : <InactiveTag />}
+                      {p.showInStore ? null : <HiddenInStoreTag />}
+                    </div>
+                    {p.barcode ? (
+                      <div className="font-mono text-muted text-xs">{p.barcode}</div>
+                    ) : null}
+                  </div>
                 </div>
-                {p.barcode ? <div className="font-mono text-muted text-xs">{p.barcode}</div> : null}
               </td>
               <td className="px-4 py-3 text-muted">{p.categoryName ?? '—'}</td>
               <td className="px-4 py-3 text-right">
@@ -111,14 +153,19 @@ export function ProductsList({ products, ...actions }: Props) {
             }`}
           >
             <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <div className="font-medium">
-                  {p.name}
-                  {p.active ? null : <InactiveTag />}
-                </div>
-                <div className="text-muted text-xs">
-                  {p.categoryName ?? 'Sin categoría'}
-                  {p.barcode ? <span className="font-mono"> · {p.barcode}</span> : null}
+              <div className="flex min-w-0 items-center gap-3">
+                <Thumb p={p} imageBase={imageBase} />
+                <div className="min-w-0">
+                  <div className="font-medium">
+                    {p.name}
+                    {p.tiers.length > 0 ? <WholesaleTag /> : null}
+                    {p.active ? null : <InactiveTag />}
+                    {p.showInStore ? null : <HiddenInStoreTag />}
+                  </div>
+                  <div className="text-muted text-xs">
+                    {p.categoryName ?? 'Sin categoría'}
+                    {p.barcode ? <span className="font-mono"> · {p.barcode}</span> : null}
+                  </div>
                 </div>
               </div>
               <div className="flex flex-none flex-col items-end gap-0.5">

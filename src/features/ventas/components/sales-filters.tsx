@@ -157,6 +157,15 @@ export function SalesFilters({ filters, today, products, cashiers, onChange, onC
           ))}
         </select>
 
+        <label className="flex h-11 cursor-pointer items-center gap-2 rounded-ctl border border-line bg-surface px-3 text-sm">
+          <input
+            type="checkbox"
+            checked={filters.edited === true}
+            onChange={(e) => onChange({ editado: e.currentTarget.checked ? '1' : '' })}
+          />
+          Con precio editado
+        </label>
+
         <ClearFiltersButton onClear={onClear} />
 
         <button type="submit" className="sr-only">

@@ -44,7 +44,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         />
         <div className="flex min-w-0 flex-1 flex-col">
           <AppHeader today={formatToday()} theme={theme} />
-          <main className="flex min-h-0 flex-1 flex-col overflow-auto pb-17 md:pb-0">
+          <main className="relative flex min-h-0 flex-1 flex-col overflow-auto pb-17 md:pb-0">
             {children}
           </main>
         </div>

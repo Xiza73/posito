@@ -1,3 +1,4 @@
+import { ProductThumb } from '@/components/product-thumb'
 import { formatCents } from '@/lib/format'
 import { type CatalogProduct, isSoldOut, stockLabel } from '../lib/catalog'
 
@@ -10,10 +11,11 @@ function stockTone(item: CatalogProduct) {
 
 type Props = {
   item: CatalogProduct
+  imageBase: string | null
   onAdd: (id: string) => void
 }
 
-export function ProductCard({ item, onAdd }: Props) {
+export function ProductCard({ item, imageBase, onAdd }: Props) {
   const soldOut = isSoldOut(item)
   const label = stockLabel(item)
 
@@ -25,9 +27,13 @@ export function ProductCard({ item, onAdd }: Props) {
       aria-label={`Agregar ${item.name}, ${formatCents(item.priceCents)}, ${label}`}
       className="flex min-h-30 cursor-pointer flex-col gap-2.5 rounded-card border border-line bg-surface p-3.5 text-left hover:border-accent disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:border-line"
     >
-      <div
-        aria-hidden="true"
-        className="aspect-[3/2] w-full rounded-ctl border border-line bg-[repeating-linear-gradient(135deg,var(--surface2)_0_6px,transparent_6px_12px)]"
+      <ProductThumb
+        imageBase={imageBase}
+        imagePath={item.imagePath}
+        name={item.name}
+        width={240}
+        height={160}
+        className="aspect-[3/2] w-full rounded-ctl"
       />
       <div className="flex-1">
         <div className="font-medium text-sm leading-snug">{item.name}</div>
