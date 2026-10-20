@@ -132,7 +132,7 @@ export function StoreShell({
   return (
     <StoreContext.Provider value={value}>
       <StoreHeader />
-      <main className="mx-auto max-w-6xl px-4 py-5 md:py-7">{children}</main>
+      <main className="mx-auto min-w-0 max-w-6xl px-4 py-5 md:py-7">{children}</main>
       <StoreFooter />
       <CartDialog ref={dialogRef} />
     </StoreContext.Provider>
@@ -233,7 +233,7 @@ function StoreFooter() {
           rel="noopener noreferrer"
           className="inline-flex h-11 items-center gap-2 self-start rounded-full border border-line px-4 font-medium"
         >
-          <WhatsappIcon className="size-5 text-ok" />
+          <WhatsappIcon className="size-5 text-[#25D366]" />
           Escríbenos por WhatsApp
         </a>
       </div>
