@@ -25,6 +25,27 @@ const price = z.string().transform((value, ctx) => {
   return cents
 })
 
+/**
+ * Costo opcional (mismo formato y tope que el precio). Ausente = no tocar el costo actual;
+ * vacío = sin costo (null). Solo lo escribe quien tiene `product:update` (ver seesProductCost).
+ */
+const cost = z
+  .string()
+  .trim()
+  .transform((value, ctx) => {
+    if (value === '') return null
+    const cents = parsePriceToCents(value)
+    if (cents === null) {
+      ctx.addIssue({
+        code: 'custom',
+        message: `Ingresa un costo válido, hasta ${MAX_INT_DIGITS} dígitos y 2 decimales (ej. 2.10)`,
+      })
+      return z.NEVER
+    }
+    return cents
+  })
+  .optional()
+
 /** Entero >= 0 escrito en un input de texto; vacío = 0. */
 const count = (message: string) =>
   z
@@ -94,6 +115,7 @@ export const productInputSchema = z
       .max(80, 'El nombre no puede pasar de 80 caracteres'),
     barcode,
     priceCents: price,
+    costCents: cost,
     categoryName,
     tracksStock: z.boolean(),
     showInStore: z.boolean().default(true),
@@ -114,6 +136,8 @@ export const productInputSchema = z
  */
 export type ProductInput = Omit<z.infer<typeof productInputSchema>, 'tiers' | 'showInStore'> & {
   tiers?: PriceTier[]
+  /** undefined = no tocar el costo; null = quitarlo. */
+  costCents?: number | null
   /** Ausente = visible en la tienda al crear / no tocar al editar. */
   showInStore?: boolean
 }

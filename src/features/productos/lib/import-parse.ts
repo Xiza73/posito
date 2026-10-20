@@ -10,6 +10,7 @@ export const IMPORT_MAX_BYTES = 5 * 1024 * 1024
 export const IMPORT_FIELDS = [
   'name',
   'price',
+  'cost',
   'category',
   'barcode',
   'stock',
@@ -27,6 +28,7 @@ export type ParseResult = { ok: true; rows: RawImportRow[] } | { ok: false; erro
 export const FIELD_LABELS: Record<ImportField, string> = {
   name: 'nombre',
   price: 'precio',
+  cost: 'costo',
   category: 'categoria',
   barcode: 'codigo_barras',
   stock: 'stock',
@@ -38,6 +40,7 @@ export const FIELD_LABELS: Record<ImportField, string> = {
 const HEADER_ALIASES: Record<string, ImportField> = {
   nombre: 'name',
   precio: 'price',
+  costo: 'cost',
   categoria: 'category',
   'codigo barras': 'barcode',
   'codigo de barras': 'barcode',
@@ -49,9 +52,9 @@ const HEADER_ALIASES: Record<string, ImportField> = {
 const headerKey = (s: string) => nameKey(s.replace(/[_-]+/g, ' '))
 
 export const IMPORT_TEMPLATE_CSV = `﻿${[
-  'nombre,precio,categoria,codigo_barras,stock,stock_minimo,controla_stock',
-  'Inca Kola 500 ml,3.50,Bebidas,7750001000011,24,6,si',
-  'Arroz extra 1 kg,4.80,Abarrotes,,10,3,si',
+  'nombre,precio,costo,categoria,codigo_barras,stock,stock_minimo,controla_stock',
+  'Inca Kola 500 ml,3.50,2.60,Bebidas,7750001000011,24,6,si',
+  'Arroz extra 1 kg,4.80,,Abarrotes,,10,3,si',
 ].join('\r\n')}\r\n`
 
 /**
@@ -192,6 +195,7 @@ export function rowsFromSheet(sheet: unknown[][]): ParseResult {
       line: i + 1,
       name: get('name'),
       price: get('price'),
+      cost: get('cost'),
       category: get('category'),
       barcode: get('barcode'),
       stock: get('stock'),

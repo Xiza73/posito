@@ -69,6 +69,8 @@ export const product = pgTable(
     nameKey: text().notNull(),
     barcode: text(),
     priceCents: integer().notNull(),
+    // Costo opcional en céntimos: SOLO administración lo ve (permiso product:update; CLAUDE.md §7)
+    costCents: integer(),
     // false = se prepara al momento (ej. café pasado): no descuenta stock
     tracksStock: boolean().default(true).notNull(),
     // Caché de SUM(stock_movement.quantity); se actualiza en la misma transacción
@@ -87,6 +89,7 @@ export const product = pgTable(
     uniqueIndex('product_org_name_key_uq').on(t.organizationId, t.nameKey),
     uniqueIndex('product_org_barcode_uq').on(t.organizationId, t.barcode),
     check('product_price_non_negative', sql`${t.priceCents} >= 0`),
+    check('product_cost_non_negative', sql`${t.costCents} is null or ${t.costCents} >= 0`),
     check('product_stock_non_negative', sql`${t.stock} >= 0`),
     check('product_min_stock_non_negative', sql`${t.minStock} >= 0`),
     // Defensa en profundidad: orgId (alfanumérico, ids de Better Auth) / productId / uuid de la imagen

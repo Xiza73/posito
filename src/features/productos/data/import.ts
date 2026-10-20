@@ -70,11 +70,21 @@ export async function commitImport(
     userId,
     rows,
     updateExisting,
-  }: { orgId: string; userId: string; rows: RawImportRow[]; updateExisting: boolean },
+    allowCost = false,
+  }: {
+    orgId: string
+    userId: string
+    rows: RawImportRow[]
+    updateExisting: boolean
+    /** `seesProductCost(rol)`: sin esto el costo del archivo se ignora (nunca se escribe). Falla cerrado. */
+    allowCost?: boolean
+  },
 ): Promise<ImportSummary> {
   return db.transaction(async (tx) => {
     const existing = indexExisting(await loadExisting(tx, orgId))
-    const validated = validateRows(rows)
+    const validated = validateRows(rows).map((v) =>
+      allowCost || !v.input ? v : { ...v, input: { ...v.input, costCents: null } },
+    )
     const all = classify(validated, existing, { blockTieredPriceChange: updateExisting })
 
     const toCreate = all.filter((r) => r.status === 'new')
@@ -114,6 +124,7 @@ export async function commitImport(
               nameKey: i.nameKey,
               barcode: i.barcode,
               priceCents: i.priceCents,
+              costCents: i.costCents,
               tracksStock: i.tracksStock,
               stock: i.stock,
               minStock: i.minStock,
@@ -130,13 +141,13 @@ export async function commitImport(
       }
     }
 
-    // Existentes: solo precio y categoría (si el archivo trae una) + stock sumado
+    // Existentes: solo precio, costo y categoría (si el archivo trae uno) + stock sumado
     const updates = toUpdate.map((r) => {
       // biome-ignore lint/style/noNonNullAssertion: las filas 'existing' siempre traen input y existing
       const [i, e] = [r.input!, r.existing!]
       const add = e.tracksStock ? i.stock : 0
       if (add > 0) movements.push({ productId: e.id, quantity: add })
-      return { id: e.id, price: i.priceCents, category: categoryOf(r), add }
+      return { id: e.id, price: i.priceCents, cost: i.costCents, category: categoryOf(r), add }
     })
     // Orden de bloqueo: SIEMPRE por id (igual que el cobro, que bloquea productos ORDER BY id). Sin esto el
     // UPDATE masivo tomaría los locks en el orden del plan y podría hacer deadlock con un cobro.
@@ -161,16 +172,20 @@ export async function commitImport(
     }
     for (const batch of chunks(updates)) {
       const values = sql.join(
-        batch.map((u) => sql`(${u.id}::uuid, ${u.price}::int, ${u.category}::uuid, ${u.add}::int)`),
+        batch.map(
+          (u) =>
+            sql`(${u.id}::uuid, ${u.price}::int, ${u.cost}::int, ${u.category}::uuid, ${u.add}::int)`,
+        ),
         sql`, `,
       )
       await tx.execute(sql`
         update product as p
         set price_cents = v.price,
+            cost_cents = coalesce(v.cost, p.cost_cents),
             category_id = coalesce(v.category, p.category_id),
             stock = p.stock + v.qty,
             updated_at = now()
-        from (values ${values}) as v(id, price, category, qty)
+        from (values ${values}) as v(id, price, cost, category, qty)
         where p.id = v.id and p.organization_id = ${orgId}
       `)
     }

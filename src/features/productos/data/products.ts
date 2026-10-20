@@ -16,6 +16,11 @@ export type ProductRow = {
   name: string
   barcode: string | null
   priceCents: number
+  /**
+   * Costo (null = sin costo). Solo existe si el visor tiene `product:update` (`includeCost`); para
+   * el resto la clave NO viaja (ni siquiera como null).
+   */
+  costCents?: number | null
   tracksStock: boolean
   stock: number
   minStock: number
@@ -33,6 +38,8 @@ export type ProductRow = {
 export type CategoryRow = { id: string; name: string; productCount: number }
 
 type ListOptions = {
+  /** Solo para quien cumple `seesProductCost`: sin esto el costo ni se consulta. */
+  includeCost?: boolean
   includeInactive?: boolean
   query?: string
   categoryId?: string
@@ -44,7 +51,7 @@ const escapeLike = (s: string) => s.replace(/[\\%_]/g, '\\$&')
 export async function listProducts(
   db: Db,
   orgId: string,
-  { includeInactive = false, query = '', categoryId }: ListOptions = {},
+  { includeInactive = false, includeCost = false, query = '', categoryId }: ListOptions = {},
 ): Promise<ProductRow[]> {
   const q = query.trim()
   const pattern = `%${escapeLike(q)}%`
@@ -54,6 +61,7 @@ export async function listProducts(
       name: product.name,
       barcode: product.barcode,
       priceCents: product.priceCents,
+      ...(includeCost ? { costCents: product.costCents } : {}),
       tracksStock: product.tracksStock,
       stock: product.stock,
       minStock: product.minStock,
@@ -161,6 +169,7 @@ export async function createProduct(
         nameKey: nameKey(input.name),
         barcode: input.barcode,
         priceCents: input.priceCents,
+        costCents: input.costCents ?? null,
         tracksStock: input.tracksStock,
         showInStore: input.showInStore ?? true,
         stock,
@@ -213,6 +222,8 @@ export async function updateProduct(
         nameKey: nameKey(input.name),
         barcode: input.barcode,
         priceCents: input.priceCents,
+        // undefined = no tocar el costo (null lo quita)
+        ...(input.costCents === undefined ? {} : { costCents: input.costCents }),
         tracksStock: input.tracksStock,
         ...(input.showInStore === undefined ? {} : { showInStore: input.showInStore }),
         minStock: input.tracksStock ? input.minStock : 0,

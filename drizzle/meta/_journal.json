@@ -127,6 +127,13 @@
       "when": 1792363261431,
       "tag": "0017_metro_delivery",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1792507409856,
+      "tag": "0018_product_cost",
+      "breakpoints": true
     }
   ]
 }

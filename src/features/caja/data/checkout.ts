@@ -166,7 +166,13 @@ export async function checkout(db: Db, params: CheckoutParams): Promise<SaleSumm
 
       const ids = [...merged.keys()].sort()
       const products = await tx
-        .select()
+        .select({
+          id: product.id,
+          name: product.name,
+          priceCents: product.priceCents,
+          tracksStock: product.tracksStock,
+          stock: product.stock,
+        })
         .from(product)
         .where(
           and(

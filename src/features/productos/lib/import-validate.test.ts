@@ -15,6 +15,7 @@ const raw = (over: Partial<RawImportRow> = {}): RawImportRow => ({
   line: ++line,
   name: 'Inca Kola',
   price: '3.50',
+  cost: '',
   category: '',
   barcode: '',
   stock: '',
@@ -36,6 +37,27 @@ const prod = (over: Partial<ExistingProduct> = {}): ExistingProduct => ({
 
 const run = (rows: RawImportRow[], existing: ExistingProduct[] = []) =>
   classify(validateRows(rows), indexExisting(existing))
+
+describe('validateRow: costo', () => {
+  it('vacío = sin costo; con valor se guarda en céntimos', () => {
+    expect(validateRow(raw()).input?.costCents).toBeNull()
+    expect(validateRow(raw({ cost: '2.60' })).input?.costCents).toBe(260)
+    expect(validateRow(raw({ cost: '0' })).input?.costCents).toBe(0)
+    expect(validateRow(raw({ cost: '2,6' })).input?.costCents).toBe(260)
+  })
+
+  it('rechaza costo inválido con error en la columna costo', () => {
+    for (const cost of ['-1', 'abc', '1.234', '1234567']) {
+      const res = validateRow(raw({ cost }))
+      expect(res.input).toBeUndefined()
+      expect(res.errors).toEqual([expect.objectContaining({ field: 'cost' })])
+    }
+  })
+
+  it('un costo mayor al precio es válido (solo se avisa en la UI)', () => {
+    expect(validateRow(raw({ price: '3.50', cost: '5' })).input?.costCents).toBe(500)
+  })
+})
 
 describe('classify: productos con precios por mayor', () => {
   it('existente con niveles y precio distinto = error (vista previa y commit)', () => {
@@ -92,6 +114,7 @@ describe('validateRow', () => {
       nameKey: 'arroz extra',
       barcode: null,
       priceCents: 480,
+      costCents: null,
       categoryName: null,
       categoryKey: null,
       tracksStock: true,

@@ -99,6 +99,7 @@ describe('rowsFromSheet', () => {
           line: 2,
           name: 'Inca Kola',
           price: '3.50',
+          cost: '',
           category: '',
           barcode: '',
           stock: '5',
@@ -190,9 +191,10 @@ describe('parseCsvFile', () => {
     })
   })
 
-  it('la plantilla se lee sin errores', () => {
+  it('la plantilla se lee sin errores y trae la columna costo', () => {
     const res = parseCsvFile(IMPORT_TEMPLATE_CSV)
     expect(res.ok && res.rows).toHaveLength(2)
+    expect(res.ok && res.rows.map((r) => r.cost)).toEqual(['2.60', ''])
     expect(IMPORT_TEMPLATE_CSV.startsWith('﻿')).toBe(true)
   })
 })
