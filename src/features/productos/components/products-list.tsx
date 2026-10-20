@@ -2,12 +2,14 @@ import { ProductThumb } from '@/components/product-thumb'
 import { StockBadge } from '@/components/ui/stock-badge'
 import { formatCents } from '@/lib/format'
 import type { ProductRow } from '../data/products'
+import { computeMargin, formatMargin } from '../lib/margin'
 import { ToggleActiveButton } from './toggle-active-button'
 
 type Props = {
   products: ProductRow[]
   canUpdate: boolean
   canDelete: boolean
+  showCost: boolean
   onEdit: (product: ProductRow) => void
   imageBase: string | null
 }
@@ -24,6 +26,16 @@ function Thumb({ p, imageBase }: { p: ProductRow; imageBase: string | null }) {
       height={48}
       className="size-12 flex-none rounded-ctl"
     />
+  )
+}
+
+/** Margen para administración: gris si es positivo, aviso si costo >= precio; "—" sin costo. */
+function MarginLine({ p }: { p: ProductRow }) {
+  const margin = computeMargin(p.priceCents, p.costCents ?? null)
+  return (
+    <div className={`text-xs ${margin?.warning ? 'text-bad' : 'text-muted'}`}>
+      {formatMargin(margin, formatCents)}
+    </div>
   )
 }
 
@@ -133,7 +145,10 @@ export function ProductsList({ products, imageBase, ...actions }: Props) {
               <td className="px-4 py-3 text-right">
                 <StockBadge {...p} />
               </td>
-              <td className="px-4 py-3 text-right font-mono">{formatCents(p.priceCents)}</td>
+              <td className="px-4 py-3 text-right">
+                <div className="font-mono">{formatCents(p.priceCents)}</div>
+                {actions.showCost ? <MarginLine p={p} /> : null}
+              </td>
               {showActions ? (
                 <td className="px-4 py-3">
                   <Actions p={p} {...actions} />
@@ -170,6 +185,7 @@ export function ProductsList({ products, imageBase, ...actions }: Props) {
               </div>
               <div className="flex flex-none flex-col items-end gap-0.5">
                 <span className="font-mono text-sm">{formatCents(p.priceCents)}</span>
+                {actions.showCost ? <MarginLine p={p} /> : null}
                 <StockBadge {...p} />
               </div>
             </div>

@@ -3,9 +3,11 @@
 import { useActionState, useEffect, useRef, useState } from 'react'
 import { Field, INPUT } from '@/components/ui/field'
 import { SubmitButton } from '@/components/ui/submit-button'
+import { formatCents } from '@/lib/format'
 import { MAX_TIERS, validateTiers } from '@/lib/pricing'
 import { createProductAction, type FormState, updateProductAction } from '../actions'
 import type { ProductRow } from '../data/products'
+import { computeMargin, formatMargin } from '../lib/margin'
 import { centsToPriceInput, parsePriceToCents, parseTierRows, type TierRow } from '../lib/schemas'
 import { ProductPhotos } from './product-photos'
 
@@ -18,10 +20,12 @@ type Props = {
   categories: string[]
   /** Base pública de las fotos (publicImageBase); null = Storage sin configurar, sin sección de foto. */
   imageBase: string | null
+  /** Owner/admin: muestra el campo Costo. El cajero ni lo ve ni lo recibe. */
+  showCost: boolean
   onClose: () => void
 }
 
-export function ProductFormDialog({ target, categories, imageBase, onClose }: Props) {
+export function ProductFormDialog({ target, categories, imageBase, showCost, onClose }: Props) {
   const ref = useRef<HTMLDialogElement>(null)
   // Mientras una foto se sube/cambia, el formulario queda bloqueado y Esc no cierra el diálogo
   const [photosBusy, setPhotosBusy] = useState(false)
@@ -50,6 +54,7 @@ export function ProductFormDialog({ target, categories, imageBase, onClose }: Pr
           product={target === 'new' ? null : target}
           categories={categories}
           imageBase={imageBase}
+          showCost={showCost}
           onClose={onClose}
           photosBusy={photosBusy}
           onPhotosBusyChange={setPhotosBusy}
@@ -63,6 +68,7 @@ function ProductForm({
   product,
   categories,
   imageBase,
+  showCost,
   onClose,
   photosBusy,
   onPhotosBusyChange,
@@ -70,6 +76,7 @@ function ProductForm({
   product: ProductRow | null
   categories: string[]
   imageBase: string | null
+  showCost: boolean
   onClose: () => void
   photosBusy: boolean
   onPhotosBusyChange: (busy: boolean) => void
@@ -88,6 +95,15 @@ function ProductForm({
   const [priceText, setPriceText] = useState(
     v?.price ?? (product ? centsToPriceInput(product.priceCents) : ''),
   )
+  const [costText, setCostText] = useState(
+    v?.cost ?? (product?.costCents != null ? centsToPriceInput(product.costCents) : ''),
+  )
+  // Margen en vivo (solo informativo); el servidor valida el costo
+  const margin = (() => {
+    const price = parsePriceToCents(priceText)
+    const cost = parsePriceToCents(costText)
+    return price === null || cost === null ? null : computeMargin(price, cost)
+  })()
   const [tierRows, setTierRows] = useState<TierRow[]>(
     () =>
       v?.tiers ??
@@ -178,6 +194,33 @@ function ProductForm({
             />
           </Field>
         </div>
+
+        {showCost ? (
+          <Field
+            id="pf-cost"
+            label="Costo (opcional)"
+            error={fe.cost?.[0]}
+            hint="Solo lo ven administradores"
+          >
+            <input
+              id="pf-cost"
+              name="cost"
+              inputMode="decimal"
+              autoComplete="off"
+              defaultValue={costText}
+              onChange={(e) => setCostText(e.currentTarget.value)}
+              className={INPUT}
+            />
+            {costText.trim() === '' ? null : (
+              <output
+                className={`text-xs ${margin?.warning ? 'font-medium text-bad' : 'text-muted'}`}
+              >
+                {formatMargin(margin, formatCents)}
+                {margin?.warning ? ' (el costo es igual o mayor al precio)' : ''}
+              </output>
+            )}
+          </Field>
+        ) : null}
 
         <Field
           id="pf-category"

@@ -13,6 +13,8 @@ export type ProductImportInput = {
   nameKey: string
   barcode: string | null
   priceCents: number
+  /** null = el archivo no trae costo (en existentes: conservar el actual). */
+  costCents: number | null
   categoryName: string | null
   categoryKey: string | null
   tracksStock: boolean
@@ -39,6 +41,7 @@ export function parseTracksStock(value: string): boolean | null {
 const ZOD_FIELD: Record<string, ImportField> = {
   name: 'name',
   priceCents: 'price',
+  costCents: 'cost',
   categoryName: 'category',
   barcode: 'barcode',
   initialStock: 'stock',
@@ -61,6 +64,7 @@ export function validateRow(raw: RawImportRow): ValidatedRow {
     name: raw.name,
     barcode: raw.barcode,
     priceCents: raw.price,
+    costCents: raw.cost,
     categoryName: raw.category,
     tracksStock: tracksStock ?? true,
     initialStock: raw.stock,
@@ -86,6 +90,7 @@ export function validateRow(raw: RawImportRow): ValidatedRow {
       nameKey: nameKey(d.name),
       barcode: d.barcode,
       priceCents: d.priceCents,
+      costCents: d.costCents ?? null,
       categoryName: d.categoryName ? normalizeDisplayName(d.categoryName) : null,
       categoryKey: d.categoryName ? nameKey(d.categoryName) : null,
       tracksStock: d.tracksStock,

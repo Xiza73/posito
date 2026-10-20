@@ -88,6 +88,27 @@ describe('productInputSchema', () => {
     })
   })
 
+  describe('costo (opcional)', () => {
+    it('ausente = undefined (no tocar); vacío = null; valor = céntimos', () => {
+      expect(productInputSchema.parse(valid).costCents).toBeUndefined()
+      expect(productInputSchema.parse({ ...valid, costCents: '  ' }).costCents).toBeNull()
+      expect(productInputSchema.parse({ ...valid, costCents: '2,10' }).costCents).toBe(210)
+      expect(productInputSchema.parse({ ...valid, costCents: '0' }).costCents).toBe(0)
+    })
+
+    it('rechaza negativos, más de 2 decimales y texto', () => {
+      for (const costCents of ['-1', '1.234', 'abc', '1234567']) {
+        const r = productInputSchema.safeParse({ ...valid, costCents })
+        expect(r.success).toBe(false)
+        expect(r.error?.issues[0].path).toEqual(['costCents'])
+      }
+    })
+
+    it('un costo mayor al precio es válido', () => {
+      expect(productInputSchema.parse({ ...valid, costCents: '9' }).costCents).toBe(900)
+    })
+  })
+
   it('showInStore: visible por defecto y respeta false', () => {
     expect(productInputSchema.parse({ ...valid, showInStore: false }).showInStore).toBe(false)
   })

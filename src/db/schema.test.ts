@@ -226,6 +226,15 @@ describe('esquema: tienda online', () => {
         set: { storeSlug },
       })
 
+  it('product.cost_cents: null o >= 0; rechaza negativos', async () => {
+    const setCost = (costCents: number | null) =>
+      db.update(schema.product).set({ costCents }).where(eq(schema.product.id, productId))
+    await expect(setCost(null)).resolves.toBeDefined()
+    await expect(setCost(0)).resolves.toBeDefined()
+    await expect(setCost(250)).resolves.toBeDefined()
+    await expect(setCost(-1)).rejects.toThrow()
+  })
+
   it('product.show_in_store es true por defecto', async () => {
     const [p] = await db
       .select({ v: schema.product.showInStore })

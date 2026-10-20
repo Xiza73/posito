@@ -38,6 +38,7 @@ const SHOWN_LIMIT = 200
 
 const COLUMNS_HELP = [
   `${FIELD_LABELS.name} y ${FIELD_LABELS.price} (obligatorias)`,
+  `${FIELD_LABELS.cost} (opcional, solo administración)`,
   FIELD_LABELS.category,
   FIELD_LABELS.barcode,
   FIELD_LABELS.stock,
@@ -279,7 +280,7 @@ function PreviewStep({
           onChange={(e) => setUpdateExisting(e.currentTarget.checked)}
           className="size-4 accent-[var(--accent)]"
         />
-        Actualizar precio y categoría de los existentes
+        Actualizar precio, costo y categoría de los existentes
       </label>
       {updateExisting ? (
         <p className="-mt-2 text-muted text-xs">

@@ -524,6 +524,51 @@ describe('nombres únicos por bodega (name_key)', () => {
     expect(await cats()).toHaveLength(1)
   })
 
+  describe('costo', () => {
+    it('se guarda al crear; editar sin costCents no lo toca; null lo quita', async () => {
+      const { id } = await createProduct(db, {
+        orgId: ORG_A,
+        userId: USER,
+        input: input({ name: 'Con costo', costCents: 210 }),
+      })
+      expect((await rowOf(id)).costCents).toBe(210)
+
+      await updateProduct(db, { orgId: ORG_A, id, input: input({ name: 'Con costo' }) })
+      expect((await rowOf(id)).costCents).toBe(210)
+
+      await updateProduct(db, {
+        orgId: ORG_A,
+        id,
+        input: input({ name: 'Con costo', costCents: 250 }),
+      })
+      expect((await rowOf(id)).costCents).toBe(250)
+
+      await updateProduct(db, {
+        orgId: ORG_A,
+        id,
+        input: input({ name: 'Con costo', costCents: null }),
+      })
+      expect((await rowOf(id)).costCents).toBeNull()
+    })
+
+    it('listProducts: sin includeCost la clave NO viaja; con includeCost sí', async () => {
+      await createProduct(db, {
+        orgId: ORG_A,
+        userId: USER,
+        input: input({ name: 'Costo visible', costCents: 123 }),
+      })
+      const hidden = (await listProducts(db, ORG_A, { query: 'Costo visible' }))[0]
+      expect(hidden).toBeDefined()
+      expect('costCents' in hidden).toBe(false)
+      expect(JSON.stringify(hidden)).not.toContain('123')
+
+      const shown = (
+        await listProducts(db, ORG_A, { query: 'Costo visible', includeCost: true })
+      )[0]
+      expect(shown.costCents).toBe(123)
+    })
+  })
+
   it('categoría: "Año" y "Ano" conviven', async () => {
     await createCategory(db, { orgId: ORG_A, name: 'Año' })
     await expect(createCategory(db, { orgId: ORG_A, name: 'Ano' })).resolves.toBeDefined()
