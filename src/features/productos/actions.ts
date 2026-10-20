@@ -5,6 +5,7 @@ import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
 import { db } from '@/lib/db'
 import { isNextControlFlow, uniqueViolation } from '@/lib/errors'
+import { seesProductCost } from '@/lib/permissions'
 import {
   IMAGE_BUCKET,
   imageBasePath,
@@ -59,6 +60,8 @@ export type ProductFormValues = {
   name: string
   barcode: string
   price: string
+  /** undefined = el formulario no trae el campo (no tocar el costo). */
+  cost?: string
   categoryName: string
   tracksStock: boolean
   showInStore: boolean
@@ -152,6 +155,8 @@ function readProductForm(formData: FormData) {
     name: text(formData, 'name'),
     barcode: text(formData, 'barcode'),
     price: text(formData, 'price'),
+    // Solo el formulario de administración envía `cost`; ausente = no tocar el costo actual
+    cost: formData.has('cost') ? text(formData, 'cost') : undefined,
     categoryName: text(formData, 'categoryName'),
     tracksStock: formData.get('tracksStock') === 'on',
     showInStore: formData.get('showInStore') === 'on',
@@ -163,6 +168,7 @@ function readProductForm(formData: FormData) {
     name: values.name,
     barcode: values.barcode,
     priceCents: values.price,
+    costCents: values.cost,
     categoryName: values.categoryName,
     tracksStock: values.tracksStock,
     showInStore: values.showInStore,
@@ -175,8 +181,8 @@ function readProductForm(formData: FormData) {
 
 /** Zod nombra el campo `priceCents`; el input del formulario se llama `price`. */
 function fieldErrorsOf(error: z.ZodError<z.output<typeof productInputSchema>>) {
-  const { priceCents, ...rest } = z.flattenError(error).fieldErrors
-  return { ...rest, price: priceCents }
+  const { priceCents, costCents, ...rest } = z.flattenError(error).fieldErrors
+  return { ...rest, price: priceCents, cost: costCents }
 }
 
 export async function createProductAction(
@@ -188,8 +194,12 @@ export async function createProductAction(
   if (!parsed.success) return { ok: false, values, fieldErrors: fieldErrorsOf(parsed.error) }
 
   try {
-    const { organization, user } = await authorize({ product: ['create'] })
-    await createProduct(db, { orgId: organization.id, userId: user.id, input: parsed.data })
+    const { organization, user, member } = await authorize({ product: ['create'] })
+    // El costo se escribe con la misma regla con que se lee (seesProductCost), no solo con product:create
+    const input = seesProductCost(member.role)
+      ? parsed.data
+      : { ...parsed.data, costCents: undefined }
+    await createProduct(db, { orgId: organization.id, userId: user.id, input })
   } catch (e) {
     return toErrorState(e, { categoryField: 'categoryName', values })
   }
@@ -209,11 +219,11 @@ export async function updateProductAction(
   if (!parsed.success) return { ok: false, values, fieldErrors: fieldErrorsOf(parsed.error) }
 
   try {
-    const { organization } = await authorize({ product: ['update'] })
+    const { organization, member } = await authorize({ product: ['update'] })
     const res = await updateProduct(db, {
       orgId: organization.id,
       id: id.data,
-      input: parsed.data,
+      input: seesProductCost(member.role) ? parsed.data : { ...parsed.data, costCents: undefined },
     })
     if (!res) return { ok: false, values, error: NOT_FOUND }
   } catch (e) {
@@ -319,6 +329,8 @@ const rawRowSchema = z.object({
   stock: z.string().max(1000),
   minStock: z.string().max(1000),
   tracksStock: z.string().max(1000),
+  // Ausente (cliente anterior a la columna `costo`) = sin costo
+  cost: z.string().max(1000).default(''),
 })
 const rawRowsSchema = z.array(rawRowSchema).min(1).max(IMPORT_MAX_ROWS)
 const commitSchema = z.object({ rows: rawRowsSchema, updateExisting: z.boolean() })
@@ -358,7 +370,7 @@ export async function commitImportAction(input: {
   const { rows, updateExisting } = parsed.data
 
   try {
-    const { organization, user } = await authorize({
+    const { organization, user, member } = await authorize({
       product: updateExisting ? ['create', 'update'] : ['create'],
     })
     const summary = await commitImport(db, {
@@ -366,6 +378,7 @@ export async function commitImportAction(input: {
       userId: user.id,
       rows,
       updateExisting,
+      allowCost: seesProductCost(member.role),
     })
     await revalidateCatalog()
     return { ok: true, summary }

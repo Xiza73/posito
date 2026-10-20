@@ -26,7 +26,7 @@ function ProductCard({ p }: { p: PublicProduct }) {
   const { slug, add } = useStore()
   const hint = tiersHint(p.tiers)
   return (
-    <li className="flex flex-col overflow-hidden rounded-2xl border border-line bg-surface transition-shadow focus-within:shadow-pop hover:shadow-pop">
+    <li className="flex min-w-0 flex-col overflow-hidden rounded-2xl border border-line bg-surface transition-shadow focus-within:shadow-pop hover:shadow-pop">
       <Link href={`/tienda/${slug}/p/${p.id}`} className="flex flex-1 flex-col">
         <div className="relative">
           <StoreImage
@@ -85,7 +85,7 @@ function Hero() {
       </div>
       <span
         aria-hidden="true"
-        className="grid size-14 flex-none place-items-center rounded-2xl bg-surface text-ok md:size-20"
+        className="grid size-14 flex-none place-items-center rounded-2xl bg-surface text-[#25D366] md:size-20"
       >
         <WhatsappIcon className="size-8 md:size-11" />
       </span>
@@ -108,7 +108,7 @@ export function CatalogView() {
       <Hero />
 
       {catalog.categories.length > 0 ? (
-        <fieldset className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 md:mx-0 md:flex-wrap md:px-0">
+        <fieldset className="-mx-4 flex min-w-0 gap-2 overflow-x-auto px-4 pb-1 [scrollbar-width:none] md:mx-0 md:flex-wrap md:px-0 [&::-webkit-scrollbar]:hidden">
           <legend className="sr-only">Categorías</legend>
           {[null, ...catalog.categories].map((c) => (
             <button

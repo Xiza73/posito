@@ -53,3 +53,9 @@ export function can(role: string, request: Parameters<(typeof roles)['admin']['a
 
 /** Ve las ventas de todos (lista, detalle, totales, CSV). UNA sola regla para la UI y los datos. */
 export const seesAllSales = (role: string) => can(role, { report: ['view'] })
+
+/**
+ * Ve y edita el costo de los productos. Usa `product:update`: solo owner/admin lo tienen (el cajero
+ * no), así que no hace falta un permiso nuevo. UNA sola regla para la UI y la capa de datos.
+ */
+export const seesProductCost = (role: string) => can(role, { product: ['update'] })

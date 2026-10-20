@@ -49,9 +49,9 @@ export function ProductFilters({
         e.preventDefault()
         apply({})
       }}
-      className="flex min-w-0 flex-1 flex-wrap items-center gap-2.5"
+      className="flex w-full min-w-0 flex-wrap items-center gap-2.5 sm:w-auto sm:min-w-80 sm:flex-1"
     >
-      <label className="field-box flex h-11 min-w-48 flex-1 items-center gap-2.5 rounded-ctl border border-line bg-surface px-3.5">
+      <label className="field-box flex h-11 min-w-0 flex-1 basis-full items-center gap-2.5 rounded-ctl border border-line bg-surface px-3.5 sm:min-w-48 sm:basis-0">
         <Icon d="M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM20 20l-3.5-3.5" />
         <span className="sr-only">Buscar por nombre o código de barras</span>
         <input
@@ -68,7 +68,7 @@ export function ProductFilters({
         aria-label="Categoría"
         defaultValue={categoryId}
         onChange={(e) => apply({ categoria: e.currentTarget.value })}
-        className="h-11 rounded-ctl border border-line bg-surface pl-3 text-sm"
+        className="h-11 min-w-0 max-w-full flex-1 rounded-ctl border border-line bg-surface pl-3 text-sm sm:flex-none"
       >
         <option value="">Todas las categorías</option>
         {categories.map((c) => (

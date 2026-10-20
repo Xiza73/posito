@@ -21,6 +21,7 @@ const row = (over: Partial<RawImportRow> = {}): RawImportRow => ({
   line: ++n + 1,
   name: `Producto ${n}`,
   price: '3.50',
+  cost: '',
   category: '',
   barcode: '',
   stock: '',
@@ -40,8 +41,8 @@ const base = (over: Partial<ProductInput> = {}): ProductInput => ({
   ...over,
 })
 
-const run = (orgId: string, rows: RawImportRow[], updateExisting = false) =>
-  commitImport(db, { orgId, userId: USER, rows, updateExisting })
+const run = (orgId: string, rows: RawImportRow[], updateExisting = false, allowCost = true) =>
+  commitImport(db, { orgId, userId: USER, rows, updateExisting, allowCost })
 
 const byName = async (orgId: string, name: string) =>
   (
@@ -143,6 +144,55 @@ describe('commitImport', () => {
         [7, 'Importación'],
       ]),
     )
+  })
+
+  it('costo: los nuevos lo guardan; vacío = sin costo', async () => {
+    await run(ORG_A, [row({ name: 'Imp con costo', cost: '2,60' }), row({ name: 'Imp sin costo' })])
+    expect((await byName(ORG_A, 'Imp con costo')).costCents).toBe(260)
+    expect((await byName(ORG_A, 'Imp sin costo')).costCents).toBeNull()
+  })
+
+  it('costo: un existente solo cambia con "actualizar"; vacío conserva el actual', async () => {
+    await createProduct(db, {
+      orgId: ORG_A,
+      userId: USER,
+      input: base({ name: 'Costeado', priceCents: 400, costCents: 300 }),
+    })
+    // Sin actualizar: se omite, el costo no cambia
+    await run(ORG_A, [row({ name: 'Costeado', price: '4', cost: '1' })])
+    expect((await byName(ORG_A, 'Costeado')).costCents).toBe(300)
+    // Actualizando con costo: cambia
+    await run(ORG_A, [row({ name: 'Costeado', price: '4', cost: '3.10' })], true)
+    expect((await byName(ORG_A, 'Costeado')).costCents).toBe(310)
+    // Actualizando con costo vacío: conserva
+    await run(ORG_A, [row({ name: 'Costeado', price: '4.50' })], true)
+    const p = await byName(ORG_A, 'Costeado')
+    expect(p).toMatchObject({ priceCents: 450, costCents: 310 })
+  })
+
+  it('allowCost=false: nunca escribe cost_cents (ni en nuevos ni al actualizar)', async () => {
+    await createProduct(db, {
+      orgId: ORG_A,
+      userId: USER,
+      input: base({ name: 'Costo protegido', priceCents: 400, costCents: 300 }),
+    })
+    await run(
+      ORG_A,
+      [
+        row({ name: 'Costo protegido', price: '4', cost: '1' }),
+        row({ name: 'Nuevo sin permiso', cost: '2' }),
+      ],
+      true,
+      false,
+    )
+    expect((await byName(ORG_A, 'Costo protegido')).costCents).toBe(300)
+    expect((await byName(ORG_A, 'Nuevo sin permiso')).costCents).toBeNull()
+  })
+
+  it('costo inválido = fila con error y no se escribe nada', async () => {
+    const summary = await run(ORG_A, [row({ name: 'Costo malo', cost: '-3' })])
+    expect(summary).toMatchObject({ created: 0, errors: 1 })
+    expect(await byName(ORG_A, 'Costo malo')).toBeUndefined()
   })
 
   it('updateExisting con categoría vacía conserva la categoría actual', async () => {
