@@ -3,7 +3,6 @@
 import { useActionState, useEffect, useRef, useState } from 'react'
 import { Field, INPUT } from '@/components/ui/field'
 import { SubmitButton } from '@/components/ui/submit-button'
-import { formatCents } from '@/lib/format'
 import { MAX_TIERS, validateTiers } from '@/lib/pricing'
 import { createProductAction, type FormState, updateProductAction } from '../actions'
 import type { ProductRow } from '../data/products'
@@ -215,7 +214,7 @@ function ProductForm({
               <output
                 className={`text-xs ${margin?.warning ? 'font-medium text-bad' : 'text-muted'}`}
               >
-                {formatMargin(margin, formatCents)}
+                {formatMargin(margin)}
                 {margin?.warning ? ' (el costo es igual o mayor al precio)' : ''}
               </output>
             )}

@@ -17,12 +17,8 @@ export function computeMargin(priceCents: number, costCents: number | null): Mar
   return { cents, percent, warning: cents <= 0 }
 }
 
-/** "Margen S/ 2.00 · 40 %" (negativo: "Margen -S/ 1.00 · -20 %"); sin costo -> "—". */
-export function formatMargin(
-  margin: Margin | null,
-  formatCents: (cents: number) => string,
-): string {
+/** "Margen 40 %" (negativo: "Margen -25 %"); precio 0 -> "Margen —"; sin costo -> "—". */
+export function formatMargin(margin: Margin | null): string {
   if (!margin) return '—'
-  const amount = margin.cents < 0 ? `-${formatCents(-margin.cents)}` : formatCents(margin.cents)
-  return margin.percent === null ? `Margen ${amount}` : `Margen ${amount} · ${margin.percent} %`
+  return margin.percent === null ? 'Margen —' : `Margen ${margin.percent} %`
 }

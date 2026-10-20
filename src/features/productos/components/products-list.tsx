@@ -29,12 +29,14 @@ function Thumb({ p, imageBase }: { p: ProductRow; imageBase: string | null }) {
   )
 }
 
-/** Margen para administración: gris si es positivo, aviso si costo >= precio; "—" sin costo. */
+/** Costo y margen % para administración; aviso si costo >= precio; sin costo no se muestra nada. */
 function MarginLine({ p }: { p: ProductRow }) {
-  const margin = computeMargin(p.priceCents, p.costCents ?? null)
+  if (p.costCents == null) return null
+  const margin = computeMargin(p.priceCents, p.costCents)
   return (
-    <div className={`text-xs ${margin?.warning ? 'text-bad' : 'text-muted'}`}>
-      {formatMargin(margin, formatCents)}
+    <div className="text-muted text-xs">
+      Costo {formatCents(p.costCents)} ·{' '}
+      <span className={margin?.warning ? 'text-bad' : undefined}>{formatMargin(margin)}</span>
     </div>
   )
 }

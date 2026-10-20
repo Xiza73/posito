@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest'
-import { formatCents } from '@/lib/format'
 import { computeMargin, formatMargin } from './margin'
 
 describe('computeMargin', () => {
@@ -23,13 +22,12 @@ describe('computeMargin', () => {
 })
 
 describe('formatMargin', () => {
-  const fmt = (m: ReturnType<typeof computeMargin>) =>
-    formatMargin(m, formatCents).replaceAll(' ', ' ')
+  const fmt = (m: ReturnType<typeof computeMargin>) => formatMargin(m).replaceAll(' ', ' ')
 
-  it('formatea importe y porcentaje', () => {
-    expect(fmt(computeMargin(500, 300))).toBe('Margen S/ 2.00 · 40 %')
-    expect(fmt(computeMargin(400, 500))).toBe('Margen -S/ 1.00 · -25 %')
-    expect(fmt(computeMargin(0, 100))).toBe('Margen -S/ 1.00')
+  it('formatea solo el porcentaje', () => {
+    expect(fmt(computeMargin(500, 300))).toBe('Margen 40 %')
+    expect(fmt(computeMargin(400, 500))).toBe('Margen -25 %')
+    expect(fmt(computeMargin(0, 100))).toBe('Margen —')
   })
 
   it('sin costo = "—"', () => {
