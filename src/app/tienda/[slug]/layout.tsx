@@ -28,7 +28,7 @@ export default async function TiendaLayout({
 
   // Tema Cielo fijo: la tienda pública es siempre clara, sin importar el tema del back-office
   return (
-    <div data-theme="cielo" className="min-h-dvh bg-page text-ink">
+    <div data-theme="cielo" className="min-h-dvh overflow-x-clip bg-page text-ink">
       <StoreShell
         slug={profile.slug}
         store={{
