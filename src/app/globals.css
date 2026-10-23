@@ -20,6 +20,8 @@
   --warn: oklch(0.7 0.14 75);
   --bad: oklch(0.6 0.17 25);
   --shadow: 0 8px 30px -12px oklch(0.4 0.06 240 / 0.25);
+  --scrollbar: oklch(0.82 0.02 230);
+  --scrollbar-hover: oklch(0.7 0.03 235);
 }
 
 /* Tema Café (oscuro) */
@@ -39,6 +41,8 @@
   --warn: oklch(0.78 0.13 80);
   --bad: oklch(0.7 0.15 25);
   --shadow: 0 8px 30px -12px oklch(0 0 0 / 0.6);
+  --scrollbar: oklch(0.42 0.02 50);
+  --scrollbar-hover: oklch(0.55 0.03 55);
 }
 
 @theme inline {
@@ -55,6 +59,8 @@
   --color-ok: var(--ok);
   --color-warn: var(--warn);
   --color-bad: var(--bad);
+  --color-scrollbar: var(--scrollbar);
+  --color-scrollbar-hover: var(--scrollbar-hover);
 
   --radius-ctl: 10px;
   --radius-card: 16px;
@@ -94,6 +100,39 @@ input::placeholder {
   :focus-visible {
     outline: 2px solid var(--accent);
     outline-offset: 2px;
+  }
+
+  /* Scrollbar fino con tokens (Cielo/Café). En @layer base para que las utilidades que lo ocultan
+     (`[scrollbar-width:none]`, `[&::-webkit-scrollbar]:hidden`) sigan ganando. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--scrollbar) transparent;
+  }
+
+  /* Fallback WebKit (Safari); Chrome 121+ usa las propiedades estándar de arriba. */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  ::-webkit-scrollbar-track,
+  ::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background-color: var(--scrollbar);
+    border: 2px solid transparent;
+    border-radius: 9999px;
+    background-clip: padding-box;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background-color: var(--scrollbar-hover);
+  }
+
+  ::-webkit-scrollbar-button {
+    display: none;
   }
 }
 
